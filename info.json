@@ -1,0 +1,9 @@
+{
+    "name" : "unhexium cogs",
+    "author" : ["robobenklein"],
+    "short" : "A bunch of cogs",
+    "description" : "Cogs by Robobenklein for various purposes.",
+    "install_msg" : "Robobenklein's cogs for Red have been installed!",
+    "tags": [],
+    "requirements": []
+}

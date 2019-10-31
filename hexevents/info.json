@@ -1,0 +1,10 @@
+{
+    "author" : ["robobenklein", "palmtree5"],
+    "install_msg" : "[p]help HexEvents to see commands.",
+    "name" : "HexEvents",
+    "disabled" : false,
+    "requirements": ["fuzzywuzzy", "python-Levenshtein", "dateparser"],
+    "short" : "Event manager utility",
+    "description" : "Allows for creating and joining events and provides a notification at the start time",
+    "tags": ["events", "utilities"]
+}

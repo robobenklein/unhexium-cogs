@@ -147,6 +147,6 @@ async def parse_time(ctx: commands.Context, msg: discord.Message):
         d = d.astimezone(tz_LOCAL)
         await ctx.send(
             "Assuming {} for the timezone! Specify the timezone if you want something else."
-            .format(str(to_zone))
+            .format(str(tz_LOCAL))
         )
     return d

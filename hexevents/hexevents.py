@@ -220,21 +220,26 @@ class HexEvents(commands.Cog):
                 emb.timestamp = dt.fromtimestamp(target_event["event_start_time"])
                 await ctx.send(embed=emb)
 
-    @event.command(name="cancel")
-    async def event_cancel(self, ctx: commands.Context, event_id: int):
+    @event.command(name="cancel", aliases=["rm", "delete", "remove"])
+    async def event_cancel(self, ctx: commands.Context, *, event_search: str):
         """Cancels the specified event"""
         guild = ctx.guild
         async with self.settings.guild(guild).events() as event_list:
+            matches = get_best_events_matching(event_list, event_search)
+            if len(matches) == 0:
+                await ctx.send(_("I could not find an event matching that search!"))
+                return
+            elif len(matches) > 1:
+                await ctx.send(_("Please be more specific! Which are you referring to?"))
+                await event_menu(ctx, [m[0] for m in matches], message=None, page=0, timeout=30)
+                return
             to_remove = [event for event in event_list if event["id"] == event_id]
-            if len(to_remove) == 0:
-                await ctx.send("No event to remove!")
-            else:
-                event = to_remove[0]
-                if not await allowed_to_edit(ctx, event):
-                    await ctx.send("You are not allowed to edit that event!")
-                    return
-                event_list.remove(to_remove[0])
-                await ctx.tick()
+            event = to_remove[0]
+            if not await allowed_to_edit(ctx, event):
+                await ctx.send("You are not allowed to edit that event!")
+                return
+            event_list.remove(to_remove[0])
+            await ctx.tick()
 
     @commands.group()
     @commands.guild_only()

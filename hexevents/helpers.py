@@ -97,7 +97,7 @@ def does_event_match_search(event, search):
     if search is None:
         return True
     r = fuzz.partial_ratio(search, event["event_name"])
-    if r > 95:
+    if r > 90:
         return True
     try:
         i = int(search)
@@ -109,12 +109,18 @@ def does_event_match_search(event, search):
 
 
 def get_best_events_matching(event_list: list, search: str):
+    if len(event_list) == 0:
+        return []
+    if search is None or len(search) == 0:
+        return event_list
     try:
         i = int(search)
         for event in event_list:
             if event["id"] == event_id:
-                return event
+                return [event]
     except ValueError:
+        pass
+    except TypeError:
         pass
     # try doing a search through the names of events:
     event_names = [
@@ -147,6 +153,7 @@ async def parse_time(ctx: commands.Context, msg: discord.Message):
         d = d.astimezone(tz_LOCAL)
         await ctx.send(
             "Assuming {} for the timezone! Specify the timezone if you want something else."
-            .format(str(tz_LOCAL))
+            .format(str(tz_LOCAL)),
+            delete_after=60
         )
     return d

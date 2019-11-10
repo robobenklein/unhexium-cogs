@@ -50,7 +50,7 @@ class HexEvents(commands.Cog):
     def cog_unload(self):
         self.event_check_task.cancel()
 
-    @commands.group()
+    @commands.group(aliases=["events"])
     @commands.guild_only()
     async def event(self, ctx: commands.Context):
         """Base command for events"""
@@ -99,15 +99,20 @@ class HexEvents(commands.Cog):
             "When will this event take place? "
             "Please specify a single point in time, like \"next week, 2pm on thursday\""
         ))
-        msg = await self.bot.wait_for("message", check=same_author_check)
-        if "cancel" == msg.content.lower():
-            await ctx.send(_("Canceled!"), delete_after=10)
-            return
+        start_time = None
+        while start_time is None:
+            msg = await self.bot.wait_for("message", check=same_author_check)
+            if "cancel" in msg.content.lower() or "stop" in msg.content.lower():
+                await ctx.send(_("Canceled!"), delete_after=10)
+                return
 
-        start_time = await parse_time(ctx, msg)
-        if start_time is None:
-            await ctx.send("Something went wrong with parsing the time you entered!")
-            return
+            start_time = await parse_time(ctx, msg)
+            if start_time is None:
+                await ctx.send(_("Something went wrong with parsing the time you entered!"), delete_after=60)
+                await ctx.send(_("Please try a specific single point in time. 'cancel' to stop."), delete_after=60)
+            else:
+                await ctx.send("Understood that as " + start_time.strftime('%F %R / %l%P %Z'))
+                await ctx.send("You can edit that later if it's wrong.", delete_after=30)
 
         # DETAILS
         await ctx.send(_("Enter a description for the event: (max 1k characters)"))
@@ -155,6 +160,48 @@ class HexEvents(commands.Cog):
             else:
                 await ctx.send("That event has already started!")
 
+    @event.command(name="force_add", aliases=["add"])
+    @checks.admin_or_permissions(manage_guild=True)
+    async def event_force_add_user(self, ctx: commands.Context, *, event_search: str):
+        guild = ctx.guild
+        author = ctx.author
+        async with self.settings.guild(guild).events() as event_list:
+            matches = get_best_events_matching(event_list, event_search)
+            if len(matches) == 0:
+                await ctx.send(_("I could not find an event matching that search!"))
+                return
+            elif len(matches) > 1:
+                await ctx.send(_("Please be more specific! Which are you referring to?"))
+                await event_menu(ctx, [m[0] for m in matches], message=None, page=0, timeout=30)
+                return
+            target_event = matches[0]
+
+            def same_author_check(msg):
+                return msg.author == author
+
+            await ctx.send(
+                _("Please mention everyone you want to add to \"")
+                + target_event["event_name"] + "\""
+            )
+            try:
+                msg = await self.bot.wait_for("message", check=same_author_check, timeout=600)
+            except asyncio.TimeoutError:
+                ctx.send("Timeout waiting for new users.", remove_after=30)
+                return
+            new_peeps = msg.raw_mentions
+            for peep_id in new_peeps:
+                if peep_id not in target_event["participants"]:
+                    target_event["participants"].append(peep_id)
+                else:
+                    new_peeps.remove(peep_id)
+            await ctx.send(
+                ("Added {} new attendee" + ("s." if len(new_peeps) != 1 else "."))
+                .format(len(new_peeps))
+                + " Event now has {} total attendees."
+                .format(len(target_event["participants"]))
+            )
+
+
     @event.command(name="leave")
     async def event_leave(self, ctx: commands.Context, *, event_search: str):
         """Leave the specified event"""
@@ -176,21 +223,24 @@ class HexEvents(commands.Cog):
                 else:
                     await ctx.send("You are not part of that event!")
 
-    @event.command(name="list", aliases=["ls"])
+    @event.command(name="list", aliases=["ls", "show"])
     async def event_list(self, ctx: commands.Context, *, event_search: str = None):
         """List events for this server"""
         guild = ctx.guild
-        events = []
+        event_embeds = []
         async with self.settings.guild(guild).events() as event_list:
-            for event in event_list:
-                if does_event_match_search(event, event_search):
-                    emb = get_event_embed(guild, ctx.message.created_at, event)
-                    events.append(emb)
-        if len(events) == 0:
-            await ctx.send(_("No events available!"))
+            for event in get_best_events_matching(event_list, event_search):
+                emb = get_event_embed(guild, ctx.message.created_at, event)
+                event_embeds.append(emb)
+        if len(event_embeds) == 0:
+            await ctx.send(
+                _("No events by that search!")
+                if event_search else
+                _("No events available!")
+            )
         else:
-            await ctx.send(str(len(events)) + _(" events to show:"))
-            await event_menu(ctx, events, message=None, page=0, timeout=30)
+            await ctx.send(str(len(event_embeds)) + _(" events to show:"))
+            await event_menu(ctx, event_embeds, message=None, page=0, timeout=30)
 
     @event.command(name="who")
     async def event_who(self, ctx: commands.Context, *, event_search: str):
@@ -220,6 +270,43 @@ class HexEvents(commands.Cog):
                 emb.timestamp = dt.fromtimestamp(target_event["event_start_time"])
                 await ctx.send(embed=emb)
 
+    @event.command(name="edit", aliases=["change", "modify"])
+    async def event_edit(self, ctx: commands.Context, *, selection: str):
+        """Edit details about an event."""
+        try:
+            event_search, attribute = selection.rsplit(maxsplit=1)
+        except ValueError:
+            await ctx.send(_("Please specify both the event name and then the attribute you want to edit!"))
+            return
+        author = ctx.author
+        guild = ctx.guild
+        async with self.settings.guild(guild).events() as event_list:
+            matches = get_best_events_matching(event_list, event_search)
+            if len(matches) == 0:
+                await ctx.send(_("I could not find an event matching that search!: ") + event_search)
+                return
+            elif len(matches) > 1:
+                await ctx.send(_("Please be more specific! Which are you referring to?"))
+                await event_menu(ctx, [m[0] for m in matches], message=None, page=0, timeout=30)
+                return
+            target_event = matches[0]
+            if not await allowed_to_edit(ctx, target_event):
+                await ctx.send(_("You are not allowed to edit that event!"))
+                return
+
+            target_event = matches[0]
+            if attribute.lower() in ["name", "title"]:
+                attribute = "event_name"
+            elif attribute.lower() in ["desc", "description", "details", "about"]:
+                attribute = "description"
+            elif attribute.lower() in ["time", "when", "start"]:
+                attribute = "event_start_time"
+
+            if attribute not in target_event:
+                await ctx.send(_("Not sure what about the event you want to edit!"))
+                await ctx.send(_("Try one of: name, desc, time"), delete_after=30)
+                return
+
     @event.command(name="cancel", aliases=["rm", "delete", "remove"])
     async def event_cancel(self, ctx: commands.Context, *, event_search: str):
         """Cancels the specified event"""
@@ -227,19 +314,34 @@ class HexEvents(commands.Cog):
         async with self.settings.guild(guild).events() as event_list:
             matches = get_best_events_matching(event_list, event_search)
             if len(matches) == 0:
-                await ctx.send(_("I could not find an event matching that search!"))
+                await ctx.send(_("I could not find an event matching that search!: ") + event_search)
                 return
             elif len(matches) > 1:
                 await ctx.send(_("Please be more specific! Which are you referring to?"))
                 await event_menu(ctx, [m[0] for m in matches], message=None, page=0, timeout=30)
                 return
-            to_remove = [event for event in event_list if event["id"] == event_id]
-            event = to_remove[0]
-            if not await allowed_to_edit(ctx, event):
-                await ctx.send("You are not allowed to edit that event!")
+            to_remove = matches[0]
+            if not await allowed_to_edit(ctx, to_remove):
+                await ctx.send(_("You are not allowed to edit that event!"))
                 return
-            event_list.remove(to_remove[0])
-            await ctx.tick()
+
+            msg = await ctx.send(
+                "Confirm deleting event '{}' (id {}) by reacting to this message!"
+                .format(to_remove["event_name"], to_remove["id"])
+            )
+            def check(reaction, user):
+                return user == ctx.message.author and reaction.message.id == msg.id
+
+            try:
+                reaction, user = await ctx.bot.wait_for('reaction_add', check=check, timeout=60.0)
+            except asyncio.TimeoutError:
+                await ctx.send(_("Timeout: not deleting event."))
+                return
+            else:
+                event_list.remove(to_remove)
+                await ctx.send(_("Event deleted!"))
+                await msg.delete()
+
 
     @commands.group()
     @commands.guild_only()

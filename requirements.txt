@@ -1,4 +1,4 @@
-Red-DiscordBot[mongo]
+Red-DiscordBot
 fuzzywuzzy
 python-Levenshtein
 dateparser

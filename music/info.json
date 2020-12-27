@@ -1,0 +1,10 @@
+{
+  "author" : ["robobenklein", "vbe0201"],
+  "install_msg" : "Music bot ready to go!",
+  "name" : "Robo's Red Music",
+  "disabled" : false,
+  "requirements": ["pynacl", "youtube-dl"],
+  "short" : "Music bot cog",
+  "description" : "Enables streaming music from YouTube",
+  "tags": ["music", "youtube"]
+}

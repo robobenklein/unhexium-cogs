@@ -50,8 +50,8 @@ class RoboRedMusic(commands.Cog):
     async def cog_before_invoke(self, ctx: commands.Context):
         ctx.voice_state = self.get_voice_state(ctx)
 
-    # async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError):
-    #     await ctx.send('Music: An error occurred: {}'.format(str(error)))
+    async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError):
+        await ctx.send('Music: An error occurred: {}'.format(str(error)))
 
     ### NOTE Commands
 
@@ -154,11 +154,16 @@ class RoboRedMusic(commands.Cog):
     @commands.command(name='skip')
     async def _skip(self, ctx: commands.Context):
         """Vote to skip a song. The requester can automatically skip.
-        3 skip votes are needed for the song to be skipped.
+        Users/2 skip votes are needed for the song to be skipped.
         """
 
         if not ctx.voice_state.is_playing:
             return await ctx.send('Not playing any music right now...')
+
+        # TODO check if other bots
+        needed_vote_count = (len(ctx.voice_state.voice.channel.members) - 1) / 2
+        total_votes = lambda: len(ctx.voice_state.skip_votes)
+        check_skip_votes = lambda: total_votes() >= needed_vote_count
 
         voter = ctx.message.author
         if voter == ctx.voice_state.current.requester:
@@ -167,16 +172,19 @@ class RoboRedMusic(commands.Cog):
 
         elif voter.id not in ctx.voice_state.skip_votes:
             ctx.voice_state.skip_votes.add(voter.id)
-            total_votes = len(ctx.voice_state.skip_votes)
 
-            if total_votes >= 3:
+            if check_skip_votes():
                 await ctx.message.add_reaction('⏭')
                 ctx.voice_state.skip()
             else:
-                await ctx.send('Skip vote added, currently at **{}/3**'.format(total_votes))
+                await ctx.send('Skip vote added, currently at **{}/{}**'.format(total_votes(), needed_vote_count))
 
         else:
-            await ctx.send('You have already voted to skip this song.')
+            if check_skip_votes():
+                await ctx.message.add_reaction('⏭')
+                ctx.voice_state.skip()
+            else:
+                await ctx.send('You have already voted to skip this song. **{}/{}** votes'.format(total_votes(), needed_vote_count))
 
     @commands.command(name='queue')
     async def _queue(self, ctx: commands.Context, *, page: int = 1):

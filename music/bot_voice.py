@@ -72,6 +72,7 @@ class VoiceState:
 
     def play_next_song(self, error=None):
         if error:
+            print(f"play_next_song error: {error}")
             raise VoiceError(str(error))
 
         self.next.set()

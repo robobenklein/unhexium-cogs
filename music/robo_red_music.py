@@ -138,7 +138,7 @@ class RoboRedMusic(commands.Cog):
             ctx.voice_state.voice.pause()
             await ctx.message.add_reaction('⏯')
         else:
-            await ctx.message.send('Not currently playing!')
+            await ctx.send('Not currently playing!')
 
     @commands.command(name='resume')
     # @commands.has_permissions(manage_guild=True)
@@ -209,7 +209,7 @@ class RoboRedMusic(commands.Cog):
         """
 
         if len(ctx.voice_state.songs) == 0:
-            return await ctx.send('Empty queue.')
+            return await ctx.send('Nothing in the queue!')
 
         items_per_page = 10
         pages = math.ceil(len(ctx.voice_state.songs) / items_per_page)
@@ -291,7 +291,7 @@ class RoboRedMusic(commands.Cog):
                     )
                     # await ctx.invoke(self._queue)
                     if not ctx.voice_state.is_playing:
-                        ctx.voice_state.next.set()
+                        ctx.voice_state.play_next_song()
                         await ctx.send('Playing now!')
         else:
             async with ctx.typing():
@@ -305,8 +305,8 @@ class RoboRedMusic(commands.Cog):
                     await ctx.voice_state.songs.put(song)
                     await ctx.send('Enqueued {}'.format(str(source)))
                     if not ctx.voice_state.is_playing:
-                        ctx.voice_state.next.set()
-                        await ctx.send('Up next!')
+                        ctx.voice_state.play_next_song()
+                        await ctx.send('Now playing!')
 
     @_join.before_invoke
     @_play.before_invoke

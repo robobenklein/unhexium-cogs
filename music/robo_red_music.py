@@ -260,11 +260,9 @@ class RoboRedMusic(commands.Cog):
 
     @commands.command(name='play')
     async def _play(self, ctx: commands.Context, *, search: str):
-        """Plays a song.
-        If there are songs in the queue, this will be queued until the
-        other songs finished playing.
-        This command automatically searches from various sites if no URL is provided.
-        A list of these sites can be found here: https://rg3.github.io/youtube-dl/supportedsites.html
+        """Play something!
+        If there are songs in the queue, items will be appended to the current queue.
+        You can enter both links and search queries.
         """
 
         if not ctx.voice_state.voice:
@@ -272,8 +270,14 @@ class RoboRedMusic(commands.Cog):
 
         if url_is_multiple(search):
             async with ctx.typing():
+                work_msg = await ctx.send("Adding items in the playlist...")
+                async def persrcupdate(idx, src):
+                    await work_msg.edit(
+                        content=f"Added item #{idx+1}...",
+                        embed=Song(src).create_embed()
+                    )
                 try:
-                    sources = await YTDLSource.create_playlist(ctx, search, loop=self.bot.loop)
+                    sources = await YTDLSource.create_playlist(ctx, search, loop=self.bot.loop, per_source_callback=persrcupdate)
                 except YTDLError as e:
                     await ctx.send('An error occurred while processing this request: {}'.format(str(e)))
                 else:
@@ -281,8 +285,11 @@ class RoboRedMusic(commands.Cog):
 
                     for song in songs:
                         await ctx.voice_state.songs.put(song)
-                    await ctx.send(f'Enqueued {len(songs)} items, current queue:')
-                    await ctx.invoke(self._queue)
+                    await work_msg.edit(
+                        content=f'Enqueued {len(songs)} items!',
+                        embed=None
+                    )
+                    # await ctx.invoke(self._queue)
                     if not ctx.voice_state.is_playing:
                         ctx.voice_state.next.set()
                         await ctx.send('Playing now!')

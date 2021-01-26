@@ -151,7 +151,10 @@ class RoboRedMusic(commands.Cog):
         else:
             if ctx.voice_state.is_playing and ctx.voice_state.voice.is_paused():
                 await ctx.send('Something went wrong!')
-            await ctx.send('Already playing!')
+            elif ctx.voice_state.is_playing:
+                await ctx.send('Already playing!')
+            else:
+                await ctx.send('Something went wrong!')
 
     @commands.command(name='stop')
     @commands.has_permissions(mute_members=True)

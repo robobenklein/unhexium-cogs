@@ -4,6 +4,7 @@ import functools
 import itertools
 import math
 import random
+import re
 
 import discord
 import youtube_dl
@@ -22,6 +23,13 @@ from .bot_voice import VoiceState, VoiceError
 
 # Silence useless bug reports messages
 youtube_dl.utils.bug_reports_message = lambda: ''
+
+playlist_ytdl_r = re.compile(r"https?:\/\/[a-z\.]*youtube.com/playlist")
+
+def url_is_multiple(url):
+    if playlist_ytdl_r.match(url):
+        return True
+    return False
 
 
 class RoboRedMusic(commands.Cog):
@@ -259,19 +267,36 @@ class RoboRedMusic(commands.Cog):
         if not ctx.voice_state.voice:
             await ctx.invoke(self._join)
 
-        async with ctx.typing():
-            try:
-                source = await YTDLSource.create_source(ctx, search, loop=self.bot.loop)
-            except YTDLError as e:
-                await ctx.send('An error occurred while processing this request: {}'.format(str(e)))
-            else:
-                song = Song(source)
+        if url_is_multiple(search):
+            async with ctx.typing():
+                try:
+                    sources = await YTDLSource.create_playlist(ctx, search, loop=self.bot.loop)
+                except YTDLError as e:
+                    await ctx.send('An error occurred while processing this request: {}'.format(str(e)))
+                else:
+                    songs = [Song(source) for source in sources]
 
-                await ctx.voice_state.songs.put(song)
-                await ctx.send('Enqueued {}'.format(str(source)))
-                if not ctx.voice_state.is_playing:
-                    ctx.voice_state.next.set()
-                    await ctx.send('Set next.')
+                    for song in songs:
+                        await ctx.voice_state.songs.put(song)
+                    await ctx.send(f'Enqueued {len(songs)} items, current queue:')
+                    await ctx.invoke(self._queue)
+                    if not ctx.voice_state.is_playing:
+                        ctx.voice_state.next.set()
+                        await ctx.send('Playing now!')
+        else:
+            async with ctx.typing():
+                try:
+                    source = await YTDLSource.create_source(ctx, search, loop=self.bot.loop)
+                except YTDLError as e:
+                    await ctx.send('An error occurred while processing this request: {}'.format(str(e)))
+                else:
+                    song = Song(source)
+
+                    await ctx.voice_state.songs.put(song)
+                    await ctx.send('Enqueued {}'.format(str(source)))
+                    if not ctx.voice_state.is_playing:
+                        ctx.voice_state.next.set()
+                        await ctx.send('Up next!')
 
     @_join.before_invoke
     @_play.before_invoke

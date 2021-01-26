@@ -51,7 +51,10 @@ class RoboRedMusic(commands.Cog):
         ctx.voice_state = self.get_voice_state(ctx)
 
     async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError):
-        await ctx.send('Music: An error occurred: {}'.format(str(error)))
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send('Music: do you have permission to do that?')
+        else:
+            await ctx.send('Music: An error occurred: {}'.format(str(error)))
 
     ### NOTE Commands
 
@@ -67,7 +70,7 @@ class RoboRedMusic(commands.Cog):
         ctx.voice_state.voice = await destination.connect()
 
     @commands.command(name='summon')
-    @commands.has_permissions(manage_guild=True)
+    @commands.has_permissions(move_members=True)
     async def _summon(self, ctx: commands.Context, *, channel: discord.VoiceChannel = None):
         """Summons the bot to a voice channel.
         If no channel was specified, it joins your channel.
@@ -79,14 +82,14 @@ class RoboRedMusic(commands.Cog):
         destination = channel or ctx.author.voice.channel
         if ctx.voice_state.voice:
             await ctx.voice_state.voice.move_to(destination)
-            await ctx.message.add_reaction('⏯')
+            await ctx.message.add_reaction('▶️')
             return
 
         ctx.voice_state.voice = await destination.connect()
         await ctx.send('Connected!')
 
     @commands.command(name='bye', aliases=['disconnect'])
-    @commands.has_permissions(manage_guild=True)
+    @commands.has_permissions(move_members=True)
     async def _leave(self, ctx: commands.Context):
         """Clears the queue and leaves the voice channel."""
 
@@ -96,7 +99,7 @@ class RoboRedMusic(commands.Cog):
         await ctx.voice_state.stop()
         del self.voice_states[ctx.guild.id]
 
-    @commands.command(name='volume')
+    @commands.command(name='volume', aliases=['vol'])
     async def _volume(self, ctx: commands.Context, *, volume: int):
         """Sets the volume of the player."""
 
@@ -119,16 +122,18 @@ class RoboRedMusic(commands.Cog):
             await ctx.send('Nothing currently playing.')
 
     @commands.command(name='pause')
-    @commands.has_permissions(manage_guild=True)
+    # @commands.has_permissions(speak=True)
     async def _pause(self, ctx: commands.Context):
         """Pauses the currently playing song."""
 
-        if not ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
+        if ctx.voice_state.voice.is_playing():
             ctx.voice_state.voice.pause()
             await ctx.message.add_reaction('⏯')
+        else:
+            await ctx.message.send('Not currently playing!')
 
     @commands.command(name='resume')
-    @commands.has_permissions(manage_guild=True)
+    # @commands.has_permissions(manage_guild=True)
     async def _resume(self, ctx: commands.Context):
         """Resumes a currently paused song."""
 
@@ -141,7 +146,7 @@ class RoboRedMusic(commands.Cog):
             await ctx.send('Already playing!')
 
     @commands.command(name='stop')
-    @commands.has_permissions(manage_guild=True)
+    @commands.has_permissions(mute_members=True)
     async def _stop(self, ctx: commands.Context):
         """Stops playing song and clears the queue."""
 
@@ -161,7 +166,7 @@ class RoboRedMusic(commands.Cog):
             return await ctx.send('Not playing any music right now...')
 
         # TODO check if other bots
-        needed_vote_count = (len(ctx.voice_state.voice.channel.members) - 1) / 2
+        needed_vote_count = (len(ctx.voice_state.voice.channel.members) - 1) // 2
         total_votes = lambda: len(ctx.voice_state.skip_votes)
         check_skip_votes = lambda: total_votes() >= needed_vote_count
 

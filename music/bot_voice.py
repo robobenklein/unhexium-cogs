@@ -48,6 +48,10 @@ class VoiceState:
     def is_playing(self):
         return self.voice and self.voice.is_playing()
 
+    @property
+    def is_paused(self):
+        return self.voice and self.voice.is_paused()
+
     async def audio_player_task(self):
         while True:
             self.next.clear()
@@ -66,7 +70,9 @@ class VoiceState:
 
             self.current.source.volume = self._volume
             self.voice.play(self.current.source, after=self.play_next_song)
-            await self.current.source.channel.send(embed=self.current.create_embed())
+            await self.current.source.channel.send(
+                embed=self.current.create_embed()
+            )
 
             await self.next.wait()
 
@@ -82,6 +88,12 @@ class VoiceState:
 
         if self.is_playing:
             self.voice.stop()
+
+    def pause(self):
+        self.voice.pause()
+
+    def resume(self):
+        self.voice.resume()
 
     async def stop(self):
         self.songs.clear()

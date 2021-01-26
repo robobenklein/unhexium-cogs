@@ -99,7 +99,7 @@ class RoboRedMusic(commands.Cog):
     @commands.command(name='bye', aliases=['disconnect'])
     @commands.has_permissions(move_members=True)
     async def _leave(self, ctx: commands.Context):
-        """Clears the queue and leaves the voice channel."""
+        """Leaves the voice channel."""
 
         if not ctx.voice_state.voice:
             return await ctx.send('Not connected to any voice channel.')
@@ -134,7 +134,7 @@ class RoboRedMusic(commands.Cog):
     async def _pause(self, ctx: commands.Context):
         """Pauses the currently playing song."""
 
-        if ctx.voice_state.voice.is_playing():
+        if ctx.voice_state.is_playing:
             ctx.voice_state.voice.pause()
             await ctx.message.add_reaction('⏯')
         else:
@@ -145,27 +145,29 @@ class RoboRedMusic(commands.Cog):
     async def _resume(self, ctx: commands.Context):
         """Resumes a currently paused song."""
 
-        if ctx.voice_state.voice.is_paused():
-            ctx.voice_state.voice.resume()
+        if ctx.voice_state.is_paused:
+            ctx.voice_state.resume()
             await ctx.message.add_reaction('⏯')
+        elif ctx.voice_state.is_playing:
+            await ctx.send('Already playing!')
         else:
-            if ctx.voice_state.is_playing and ctx.voice_state.voice.is_paused():
-                await ctx.send('Something went wrong!')
-            elif ctx.voice_state.is_playing:
-                await ctx.send('Already playing!')
-            else:
-                await ctx.send('Something went wrong!')
+            await ctx.send('Something went wrong!')
 
     @commands.command(name='stop')
     @commands.has_permissions(mute_members=True)
     async def _stop(self, ctx: commands.Context):
         """Stops playing song and clears the queue."""
 
+        had_queue = len(ctx.voice_state.songs) > 0
         ctx.voice_state.songs.clear()
 
-        if not ctx.voice_state.is_playing:
+        if ctx.voice_state.is_playing or ctx.voice_state.is_paused:
             ctx.voice_state.voice.stop()
             await ctx.message.add_reaction('⏹')
+        elif had_queue:
+            ctx.send(f"Queue emptied!")
+        else:
+            ctx.send(f"Not currently doing anything!")
 
     @commands.command(name='skip')
     async def _skip(self, ctx: commands.Context):
@@ -274,7 +276,7 @@ class RoboRedMusic(commands.Cog):
                 async def persrcupdate(idx, src):
                     await work_msg.edit(
                         content=f"Added item #{idx+1}...",
-                        embed=Song(src).create_embed()
+                        embed=Song(src).create_embed(title="Added to queue")
                     )
                 try:
                     sources = await YTDLSource.create_playlist(ctx, search, loop=self.bot.loop, per_source_callback=persrcupdate)
@@ -289,7 +291,7 @@ class RoboRedMusic(commands.Cog):
                         content=f'Enqueued {len(songs)} items!',
                         embed=None
                     )
-                    # await ctx.invoke(self._queue)
+                    await ctx.message.delete()
                     if not ctx.voice_state.is_playing:
                         ctx.voice_state.play_next_song()
                         await ctx.send('Playing now!')
@@ -303,10 +305,14 @@ class RoboRedMusic(commands.Cog):
                     song = Song(source)
 
                     await ctx.voice_state.songs.put(song)
-                    await ctx.send('Enqueued {}'.format(str(source)))
+                    await ctx.send(
+                        f'{ctx.author.mention} enqueued {str(source)}',
+                        embed=song.create_embed(title="Added to queue")
+                    )
+                    await ctx.message.delete()
                     if not ctx.voice_state.is_playing:
                         ctx.voice_state.play_next_song()
-                        await ctx.send('Now playing!')
+                        # await ctx.send('Now playing!')
 
     @_join.before_invoke
     @_play.before_invoke

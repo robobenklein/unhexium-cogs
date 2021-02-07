@@ -1,0 +1,10 @@
+{
+  "author" : ["robobenklein"],
+  "install_msg" : "An elephant walked into a bar...",
+  "name" : "Elephants",
+  "disabled" : false,
+  "hidden": false,
+  "short" : "elephants.",
+  "description" : "How do you answer questions about elephants?",
+  "tags": ["elephant", "jokes"]
+}

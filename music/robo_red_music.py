@@ -43,6 +43,11 @@ class RoboRedMusic(commands.Cog):
 
     def get_voice_state(self, ctx: commands.Context):
         state = self.voice_states.get(ctx.guild.id)
+        if state and not state.voice:
+            # need to recreate the VoiceState
+            del(state)
+            state = None
+
         if not state:
             state = VoiceState(self.bot, ctx)
             self.voice_states[ctx.guild.id] = state

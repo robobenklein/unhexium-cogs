@@ -1,0 +1,10 @@
+{
+  "author" : ["robobenklein"],
+  "install_msg" : "Posting images from a Szurubooru instance",
+  "name" : "SzuruLink",
+  "disabled" : false,
+  "hidden": false,
+  "short" : "szurulink",
+  "description" : "Posts new szurubooru images on a timer with a rate limit",
+  "tags": ["images", "scheduled", "booru", "szurubooru"]
+}

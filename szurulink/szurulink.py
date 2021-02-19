@@ -62,14 +62,18 @@ class SzuruPoster(commands.Cog):
         "last_post_time": 0,
     }
     default_member = {
-        "szuruname": None
+        "szuruname": None,
+        "szurutoken": None,
     }
 
     def __init__(self, bot: Red):
         self.bot = bot
 
         self.config = Config.get_conf(self, identifier=435619873)
-        self.session = aiohttp.ClientSession(loop=bot.loop)
+        self.session = aiohttp.ClientSession(
+            loop=bot.loop,
+            raise_for_status=False
+        )
 
         self.config.register_global(**self.default_global)
         self.config.register_guild(**self.default_guild)
@@ -96,13 +100,23 @@ class SzuruPoster(commands.Cog):
 
         return True
 
+    # async def check_user_authenticated(self, ctx):
+    # async def check_channel_initialized(self, ctx):
+
     async def cog_before_invoke(self, ctx: commands.Context):
         ctx.cfg_guild = self.config.guild(ctx.guild)
         ctx.cfg_channel = self.config.channel(ctx.channel)
+        ctx.cfg_member = self.config.member(ctx.author)
 
     async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send('SzuruLink: do you have permission to do that?')
+        elif isinstance(error, aiohttp.client_exceptions.ClientResponseError):
+            await ctx.send(f'SzuruLink: server error: {error}')
+            print(f"error {error}")
+            print(f"request: {error.request_info}")
+            # print(f"")
+            raise error
         else:
             await ctx.send('SzuruLink: An error occurred: {}'.format(str(error)))
             raise error
@@ -151,6 +165,118 @@ class SzuruPoster(commands.Cog):
             print(r.text)
             raise RuntimeError("Failed to parse response from server.")
 
+    async def user_api_get(self, ctx, path):
+        au = await self.get_api_url(ctx)
+        api_user = await ctx.cfg_member.szuruname()
+        api_token = await ctx.cfg_member.szurutoken()
+        auth = stringToBase64(f"{api_user}:{api_token}")
+
+        r = await self.session.get(
+            f"{au}{path}",
+            headers={
+                'Authorization': f"Token {auth}",
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            }
+        )
+        try:
+            return await r.json()
+        except json.decoder.JSONDecodeError as e:
+            print(f"error: {r}: {e}")
+            print(r.text)
+            raise RuntimeError("Failed to parse response from server.")
+
+    async def user_api_upload_tempfile(self, ctx, filecontent):
+        au = await self.get_api_url(ctx)
+        api_user = await ctx.cfg_member.szuruname()
+        api_token = await ctx.cfg_member.szurutoken()
+        auth = stringToBase64(f"{api_user}:{api_token}")
+
+        # print(f"filecontent type: {type(filecontent)} size {len(filecontent)}")
+        with aiohttp.MultipartWriter('mixed') as mpwriter:
+            part = mpwriter.append(
+                BytesIO(filecontent),
+                # {"Content-Type": "multipart/form-data"}
+            )
+            part.set_content_disposition('form-data', name="content")
+            # with aiohttp.MultipartWriter('related') as subwriter:
+            #     mpwriter.append_json(json_data)
+            # mpwriter.append(subwriter)
+            # with aiohttp.MultipartWriter('related') as subwriter:
+            # mpwriter.append(subwriter)
+        # print(f"made mpwriter {mpwriter}")
+        r = await self.session.post(
+            f"{au}/uploads",
+            headers={
+                'Authorization': f"Token {auth}",
+                # 'Content-Type': 'multipart/form-data',
+                'Accept': 'application/json',
+            },
+            data=mpwriter,
+            raise_for_status=False,
+        )
+
+        return await r.json()
+
+    async def user_api_upload_post(self, ctx, json_data, filecontent):
+        au = await self.get_api_url(ctx)
+        api_user = await ctx.cfg_member.szuruname()
+        api_token = await ctx.cfg_member.szurutoken()
+        auth = stringToBase64(f"{api_user}:{api_token}")
+
+        req = requests.Request(
+            'POST',
+            f"{au}/posts/",
+            data=json_data,
+            files={
+                # "json": (None, json.dumps(json_data), 'application/json'),
+                "content": ('discord-upload', BytesIO(filecontent), 'image/unknown'),
+            },
+            headers={
+                'Authorization': f"Token {auth}",
+                'Accept': 'application/json',
+            },
+        )
+        prepped = req.prepare()
+        print(prepped.body.decode('ascii', errors='ignore'))
+        headers = '\n'.join(['{}: {}'.format(*hv) for hv in prepped.headers.items()])
+        print(headers)
+
+        with requests.Session() as s:
+            r = s.send(prepped)
+            print(r)
+            r.raise_for_status()
+            return r.json()
+
+    async def user_api_post(self, ctx, path, *, json_data = {}):
+        au = await self.get_api_url(ctx)
+        api_user = await ctx.cfg_member.szuruname()
+        api_token = await ctx.cfg_member.szurutoken()
+        auth = stringToBase64(f"{api_user}:{api_token}")
+
+        r = await self.session.post(
+            f"{au}{path}",
+            headers={
+                'Authorization': f"Token {auth}",
+                # 'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            json=json_data,
+        )
+        try:
+            print(f"resp {r} {r.status}:")
+            print(f"req {r.request_info}")
+            print(await r.text())
+            return await r.json()
+        except json.decoder.JSONDecodeError as e:
+            print(f"error: {r}: {e}")
+            print(r.text)
+            raise RuntimeError("Failed to parse response from server.")
+
+    async def user_api_login_bump(self, ctx):
+        user = await ctx.cfg_member.szuruname()
+        return await self.user_api_get(ctx, f"/user/{user}?bump-login")
+
     async def _augment_post_data(self, ctx, data: dict):
         cu = await ctx.cfg_channel.api_url()
         unsafe = True if data['safety'] == "unsafe" else False
@@ -169,7 +295,7 @@ class SzuruPoster(commands.Cog):
         return data
 
     async def get_post_by_id(self, ctx: commands.Context, postid):
-        cu = await ctx.cfg_channel.api_url()
+        # cu = await ctx.cfg_channel.api_url()
         data = await self.api_get(ctx, f"/post/{postid}")
         if 'name' in data and data['name'] == 'PostNotFoundError':
             raise LookupError(f"No such post with ID {postid}")
@@ -188,7 +314,7 @@ class SzuruPoster(commands.Cog):
         data = await self.api_get(ctx, f"/posts/?{urlquery}")
         # await ctx.send(box(str(data)[:499]))
 
-        print(data)
+        # print(data)
 
         data['_'] = {
             'results': [await self._augment_post_data(ctx, x) for x in data['results']],
@@ -222,11 +348,13 @@ class SzuruPoster(commands.Cog):
     @szuru_set.command(name='url')
     async def set_api_url(self, ctx: commands.Context, *, api_url: str = None):
         if api_url:
+            if api_url[-1] == '/':
+                api_url = api_url[:-1]
             await ctx.cfg_channel.api_url.set(api_url)
-            await ctx.send(f"Set API URL to {api_url}")
+            await ctx.send(f"Set API URL to `{api_url}`")
         else:
             api_url = await ctx.cfg_channel.api_url()
-            await ctx.send(f"API URL is {api_url}")
+            await ctx.send(f"API URL is `{api_url}`")
 
     @szuru_set.command(name='user')
     async def set_api_user(self, ctx: commands.Context, *, api_user: str = None):
@@ -271,8 +399,115 @@ class SzuruPoster(commands.Cog):
             seconds = await ctx.cfg_guild.autopostseconds()
             await ctx.send(f"Currently posting every {seconds} seconds.")
 
+    @szuru.command(name='login')
+    async def user_login_process(self, ctx: commands.Context, user: str = None):
+        """Login with this bot in order to upload content to the szuru via discord
+
+        I will ask for an account token via DMs, so please ensure server member DMs are enabled, at least temporarily.
+        """
+        cu = await ctx.cfg_channel.api_url()
+        if user is None:
+            user = await ctx.cfg_member.szuruname()
+            if user:
+                await ctx.send(
+                    f"{ctx.author.mention}: you're currently logged in as {user}, use `logout` to delete your credentials.",
+                    delete_after=30,
+                    reference=ctx.message,
+                )
+            else:
+                await ctx.send(f"You're not currently logged into this szurubooru. Use `login <username>` to authenticate an account on {cu}")
+        else:
+            # interactive login process
+            def token_check(message):
+                if message.author == ctx.author:
+                    return True
+            promptmsg = await ctx.author.send(
+                f"To complete the login process in {ctx.guild} please send me an account token generated from {cu}/user/{user}/list-tokens",
+                delete_after=600,
+            )
+            tokenmsg = await self.bot.wait_for(
+                'message',
+                check=token_check,
+                timeout=600
+            )
+            token = tokenmsg.content
+
+            try:
+                await ctx.cfg_member.szuruname.set(user)
+                await ctx.cfg_member.szurutoken.set(token)
+                profile = await self.user_api_login_bump(ctx)
+                await ctx.author.send(
+                    f"You're logged in as {profile['name']}! You should delete your message containing your token now.",
+                )
+                await ctx.send(f"{ctx.author.mention} logged in successfully!")
+            except Exception as e:
+                await ctx.cfg_member.szuruname.set(None)
+                await ctx.cfg_member.szurutoken.set(None)
+                await ctx.author.send(
+                    f"Sorry, I could not authenticate you: {e}",
+                )
+                raise e
+            finally:
+                await ctx.message.delete()
+                await promptmsg.delete()
+
+    @szuru.command(name='logout')
+    async def user_logout_process(self, ctx: commands.Context):
+        """Delete your szuru account info from this bot.
+
+        You don't need to log out if you just need to change your token, simply run login again.
+        """
+        await ctx.cfg_member.szuruname.set(None)
+        await ctx.cfg_member.szurutoken.set(None)
+        await ctx.send(
+            f"{ctx.author.mention}: you have been logged out, I no longer have access to your account.",
+            reference=ctx.message,
+        )
+
+    @szuru.command(name='upload', aliases=['u'])
+    async def upload_new_post(self, ctx: commands.Context, safety: str, *tags):
+        """Upload media via discord message attachment
+
+        Specify 'anon' or 'anonymous' after the safety to upload anonymously.
+        """
+        if safety not in ['safe', 'sketchy', 'unsafe']:
+            raise ValueError(f"Must specify safety: safe, sketchy, or unsafe")
+        anon = False
+        if 'anonymous' in tags:
+            anon = True
+            tags.remove('anonymous')
+        if 'anon' in tags:
+            anon = True
+            tags.remove('anon')
+        if not ctx.message.attachments:
+            raise ValueError(f"Please attach the media to upload to your discord message!")
+
+        async with ctx.typing():
+            filebytes = await ctx.message.attachments[0].read()
+            jdata = {
+                "safety": safety,
+                "tags": tags,
+                "anonymous": anon,
+                # "contentToken": filetokenresp['token'],
+                # "contentToken": "c5b4552e805020b6e8b7abdc40b2749b10af7b2b",
+            }
+            rdata = await self.user_api_upload_post(
+                ctx,
+                json_data=jdata,
+                filecontent=filebytes,
+            )
+            # filetokenresp = await self.user_api_upload_tempfile(ctx, filebytes)
+            # print(f"file token: {filetokenresp}")
+            # print(jdata)
+            # rdata = await self.user_api_post(
+            #     ctx, f"/posts/",
+            #     json_data=jdata,
+            # )
+            print(rdata)
+
     @szuru.command(name='post', aliases=['p'])
     async def get_post(self, ctx: commands.Context, postid: int):
+        """Get a post by ID"""
         async with ctx.typing():
             data = await self.get_post_by_id(ctx, postid)
             post_e = await self.post_data_to_embed(data)
@@ -282,6 +517,10 @@ class SzuruPoster(commands.Cog):
                 embed=post_e,
                 # file=attach,
             )
+
+    @szuru.command(name='tag', aliases=['t', 'tags'])
+    async def szuru_tag(self, ctx: commands.Context, postid: int, operation: str, *tags):
+        raise NotImplementedError()
 
     @szuru.command(name='seach', aliases=['query', 'find'])
     async def search_posts(self, ctx: commands.Context, *query):
@@ -337,8 +576,6 @@ class SzuruPoster(commands.Cog):
             if now < last_post_time + autopostseconds:
                 continue
 
-            await cfg_channel.last_post_time.set(now)
-
             ctx = dotdict()
             ctx.cfg_channel = cfg_channel
             ctx.cfg_guild = cfg_guild
@@ -350,8 +587,14 @@ class SzuruPoster(commands.Cog):
                     # f"Auto-Post:",
                     embed=post_e,
                 )
+                await cfg_channel.last_post_time.set(now)
                 await cfg_channel.current_post_num.set(last_post_id + 1)
             except LookupError as e:
+                # check if there are further posts (i.e. missing number)
+                search_results = await self.get_posts_by_query(ctx, "sort:date")
+                latest_id = search_results['_']['results'][0]['id']
+                if latest_id > last_post_id:
+                    await cfg_channel.current_post_num.set(last_post_id + 1)
                 continue
 
     @check_send_next_post.before_loop

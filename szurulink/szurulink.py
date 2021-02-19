@@ -9,6 +9,8 @@ import base64
 import asyncio
 import time
 from io import BytesIO
+import urllib
+import json
 
 import discord
 from async_timeout import timeout
@@ -19,7 +21,7 @@ import aiohttp
 from redbot.core import commands
 from redbot.core import Config, commands, checks
 from redbot.core.bot import Red
-from redbot.core.utils.chat_formatting import pagify, warning
+from redbot.core.utils.chat_formatting import pagify, warning, box
 from redbot.core.i18n import Translator
 
 class dotdict(dict):
@@ -43,6 +45,7 @@ class SzuruPoster(commands.Cog):
 
     default_global = {
         "autoposttimer": 10,
+        "max_searchresults": 3,
     }
     default_guild = {
         "autopostchannel": None,
@@ -83,6 +86,9 @@ class SzuruPoster(commands.Cog):
 
     def cog_unload(self):
         self.check_send_next_post.cancel()
+        self.bot.loop.run_until_complete(
+            self.session.close()
+        )
 
     def cog_check(self, ctx: commands.Context):
         if not ctx.guild:
@@ -124,11 +130,13 @@ class SzuruPoster(commands.Cog):
 
     async def api_get(self, ctx: commands.Context, path):
         au = await self.get_api_url(ctx)
+        if not au:
+            raise ValueError("There's no API URL set for this channel!")
         api_user = await ctx.cfg_channel.api_user()
         api_token = await ctx.cfg_channel.api_token()
         auth = stringToBase64(f"{api_user}:{api_token}")
 
-        r = requests.get(
+        r = await self.session.get(
             f"{au}{path}",
             headers={
                 'Authorization': f"Token {auth}",
@@ -136,15 +144,16 @@ class SzuruPoster(commands.Cog):
                 'Accept': 'application/json',
             }
         )
-        return r.json()
+        try:
+            return await r.json()
+        except json.decoder.JSONDecodeError as e:
+            print(f"error: {r}: {e}")
+            print(r.text)
+            raise RuntimeError("Failed to parse response from server.")
 
-    async def get_post_by_id(self, ctx: commands.Context, postid):
+    async def _augment_post_data(self, ctx, data: dict):
         cu = await ctx.cfg_channel.api_url()
-        data = await self.api_get(ctx, f"/post/{postid}")
-        if 'name' in data and data['name'] == 'PostNotFoundError':
-            raise LookupError(f"No such post with ID {postid}")
         unsafe = True if data['safety'] == "unsafe" else False
-
         data['_'] = {
             "link": f"{cu}/{data['contentUrl']}",
             "unsafe": unsafe,
@@ -159,6 +168,33 @@ class SzuruPoster(commands.Cog):
             }
         return data
 
+    async def get_post_by_id(self, ctx: commands.Context, postid):
+        cu = await ctx.cfg_channel.api_url()
+        data = await self.api_get(ctx, f"/post/{postid}")
+        if 'name' in data and data['name'] == 'PostNotFoundError':
+            raise LookupError(f"No such post with ID {postid}")
+
+        return await self._augment_post_data(ctx, data)
+
+    async def get_posts_by_query(self, ctx, user_query: str):
+        cu = await ctx.cfg_channel.api_url()
+        max = await self.config.max_searchresults()
+        urlquery = urllib.parse.urlencode({
+            "query": user_query,
+            "limit": max,
+            "fields": "id,thumbnailUrl,contentUrl,type,safety,score,favoriteCount,commentCount,tags,user,version",
+            # "offset": 0,
+        })
+        data = await self.api_get(ctx, f"/posts/?{urlquery}")
+        # await ctx.send(box(str(data)[:499]))
+
+        print(data)
+
+        data['_'] = {
+            'results': [await self._augment_post_data(ctx, x) for x in data['results']],
+        }
+        return data
+
     async def post_data_to_embed(self, data):
         embed = discord.Embed(
             title=f"Post {data['id']}",
@@ -167,6 +203,7 @@ class SzuruPoster(commands.Cog):
         )
         if data['_']['user']:
             embed.set_author(**data['_']['user'])
+        embed.set_image(url=data['_']['link'])
         return embed
 
     ### NOTE Commands
@@ -243,8 +280,36 @@ class SzuruPoster(commands.Cog):
 
             await ctx.send(
                 embed=post_e,
-                file=attach,
+                # file=attach,
             )
+
+    @szuru.command(name='seach', aliases=['query', 'find'])
+    async def search_posts(self, ctx: commands.Context, *query):
+        """Search posts by query"""
+        async with ctx.typing():
+            print(query)
+            qstr = ' '.join(query)
+            search_results = await self.get_posts_by_query(ctx, qstr)
+
+            await ctx.send(
+                f"Found {search_results['total']} results:",
+                # files=[
+                #     await self.get_file_from_post_data(d) for d in search_results['_']['results'][:3]
+                # ],
+            )
+            max = await self.config.max_searchresults()
+
+            for data in search_results['_']['results'][:max]:
+                # data = await self.get_post_by_id(ctx, postid)
+                post_e = await self.post_data_to_embed(data)
+                attach = await self.get_file_from_post_data(data)
+                await ctx.send(
+                    embed=post_e,
+                    # file=attach,
+                )
+
+            if search_results['total'] > max:
+                await ctx.send("To see more results either refine the search or change the sorting order.")
 
     ### Task
 
@@ -282,9 +347,8 @@ class SzuruPoster(commands.Cog):
                 post_e = await self.post_data_to_embed(data)
                 attach = await self.get_file_from_post_data(data)
                 await ch.send(
-                    # f"Next Szuru Post:",
+                    # f"Auto-Post:",
                     embed=post_e,
-                    file=attach,
                 )
                 await cfg_channel.current_post_num.set(last_post_id + 1)
             except LookupError as e:

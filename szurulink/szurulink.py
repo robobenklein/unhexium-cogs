@@ -192,31 +192,42 @@ class SzuruPoster(commands.Cog):
         api_token = await ctx.cfg_member.szurutoken()
         auth = stringToBase64(f"{api_user}:{api_token}")
 
-        # print(f"filecontent type: {type(filecontent)} size {len(filecontent)}")
-        with aiohttp.MultipartWriter('mixed') as mpwriter:
-            part = mpwriter.append(
-                BytesIO(filecontent),
-                # {"Content-Type": "multipart/form-data"}
-            )
-            part.set_content_disposition('form-data', name="content")
-            # with aiohttp.MultipartWriter('related') as subwriter:
-            #     mpwriter.append_json(json_data)
-            # mpwriter.append(subwriter)
-            # with aiohttp.MultipartWriter('related') as subwriter:
-            # mpwriter.append(subwriter)
-        # print(f"made mpwriter {mpwriter}")
-        r = await self.session.post(
+        # # print(f"filecontent type: {type(filecontent)} size {len(filecontent)}")
+        # with aiohttp.MultipartWriter('mixed') as mpwriter:
+        #     part = mpwriter.append(
+        #         BytesIO(filecontent),
+        #         # {"Content-Type": "multipart/form-data"}
+        #     )
+        #     part.set_content_disposition('form-data', name="content")
+        #     # with aiohttp.MultipartWriter('related') as subwriter:
+        #     #     mpwriter.append_json(json_data)
+        #     # mpwriter.append(subwriter)
+        #     # with aiohttp.MultipartWriter('related') as subwriter:
+        #     # mpwriter.append(subwriter)
+        # # print(f"made mpwriter {mpwriter}")
+        # r = await self.session.post(
+        #     f"{au}/uploads",
+        #     headers={
+        #         'Authorization': f"Token {auth}",
+        #         # 'Content-Type': 'multipart/form-data',
+        #         'Accept': 'application/json',
+        #     },
+        #     data=mpwriter,
+        #     raise_for_status=False,
+        # )
+        #
+        # return await r.json()
+
+        r = requests.post(
             f"{au}/uploads",
             headers={
                 'Authorization': f"Token {auth}",
                 # 'Content-Type': 'multipart/form-data',
                 'Accept': 'application/json',
             },
-            data=mpwriter,
-            raise_for_status=False,
+            files={'content': BytesIO(filecontent)}
         )
-
-        return await r.json()
+        return r.json()
 
     async def user_api_upload_post(self, ctx, json_data, filecontent):
         au = await self.get_api_url(ctx)
@@ -484,26 +495,32 @@ class SzuruPoster(commands.Cog):
 
         async with ctx.typing():
             filebytes = await ctx.message.attachments[0].read()
+            # rdata = await self.user_api_upload_tempfile(
+            #     ctx,
+            #     json_data=jdata,
+            #     filecontent=filebytes,
+            # )
+            filetokenresp = await self.user_api_upload_tempfile(ctx, filebytes)
+            print(f"file token: {filetokenresp}")
             jdata = {
                 "safety": safety,
                 "tags": tags,
                 "anonymous": anon,
-                # "contentToken": filetokenresp['token'],
-                # "contentToken": "c5b4552e805020b6e8b7abdc40b2749b10af7b2b",
+                "contentToken": filetokenresp['token'],
             }
-            rdata = await self.user_api_upload_post(
-                ctx,
-                json_data=jdata,
-                filecontent=filebytes,
-            )
-            # filetokenresp = await self.user_api_upload_tempfile(ctx, filebytes)
-            # print(f"file token: {filetokenresp}")
             # print(jdata)
-            # rdata = await self.user_api_post(
-            #     ctx, f"/posts/",
-            #     json_data=jdata,
-            # )
-            print(rdata)
+            rdata = await self.user_api_post(
+                ctx, f"/posts/",
+                json_data=jdata,
+            )
+            # print(rdata)
+
+            data = await self._augment_post_data(rdata)
+            post_e = await self.post_data_to_embed(data)
+            await ctx.send(
+                f"Uploaded!",
+                embed=post_e,
+            )
 
     @szuru.command(name='post', aliases=['p'])
     async def get_post(self, ctx: commands.Context, postid: int):

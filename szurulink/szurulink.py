@@ -295,7 +295,7 @@ class SzuruPoster(commands.Cog):
             "link": f"{cu}/{data['contentUrl']}",
             "unsafe": unsafe,
             "filename": data['contentUrl'].split('/')[-1],
-            "user": None
+            "user": None,
         }
         if 'user' in data and data['user']:
             data['_']["user"] = {
@@ -332,7 +332,7 @@ class SzuruPoster(commands.Cog):
         }
         return data
 
-    async def post_data_to_embed(self, data):
+    async def post_data_to_embed(self, data, *, include_image=True):
         embed = discord.Embed(
             title=f"Post {data['id']}",
             url=data['_']['link'],
@@ -340,7 +340,32 @@ class SzuruPoster(commands.Cog):
         )
         if data['_']['user']:
             embed.set_author(**data['_']['user'])
-        embed.set_image(url=data['_']['link'])
+        if include_image:
+            embed.set_image(url=data['_']['link'])
+        if data['score']:
+            embed.add_field(
+                name="Votes",
+                value=data['score'],
+                inline=True,
+            )
+        if data['favoriteCount']:
+            embed.add_field(
+                name="Favorites",
+                value=data['favoriteCount'],
+                inline=True,
+            )
+        if data['type'] != "image":
+            embed.add_field(
+                name="Type",
+                value=data['type'],
+                inline=True,
+            )
+        if data['relations']:
+            embed.add_field(
+                name="Related",
+                value=', '.join([str(x['id']) for x in data['relations']]),
+                inline=True,
+            )
         return embed
 
     ### NOTE Commands

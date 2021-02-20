@@ -481,9 +481,11 @@ class SzuruPoster(commands.Cog):
 
         Specify 'anon' or 'anonymous' after the safety to upload anonymously.
         """
+        safety = safety.lower()
         if safety not in ['safe', 'sketchy', 'unsafe']:
             raise ValueError(f"Must specify safety: safe, sketchy, or unsafe")
         anon = False
+        tags = list(tags)
         if 'anonymous' in tags:
             anon = True
             tags.remove('anonymous')

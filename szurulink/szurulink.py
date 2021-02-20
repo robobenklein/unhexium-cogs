@@ -515,7 +515,7 @@ class SzuruPoster(commands.Cog):
             )
             # print(rdata)
 
-            data = await self._augment_post_data(rdata)
+            data = await self._augment_post_data(ctx, rdata)
             post_e = await self.post_data_to_embed(data)
             await ctx.send(
                 f"Uploaded!",

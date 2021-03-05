@@ -119,6 +119,21 @@ e_qs = {
 
     "Q: How do you shoot a blue elephant?": "A: With a blue elephant gun.",
     "Q: How do you shoot a white elephant?": "A: Hold his nose until he turns blue, then shoot him with a blue elephant gun.",
+
+    # non-elephant additions:
+    "Q: What do you get when you cross a scientist with a chimpanzee?": "A: A strongly worded letter from the ethics department.",
+    "Q: Why are seagulls called seagulls?": "A: Because if they flew over bays, they'd be bagels.",
+    "Q: What do we want?": "A: Low flying airplane noises!",
+    "Q: When do we want them?": "A: nnneeeEEEEOOOOOWWWWW",
+    "Q: how do you throw a party in outer space?": "A: you planet",
+    "Q: What you get when you cross the Atlantic with the Titanic?": "A: About half way.",
+    "Q: What did one snowman say to the other?": "A: Do you smell carrots?!",
+    "Q: Why do Norwegian military boats have barcodes on them?": "A: So that when they come back to port they can Scandinavian",
+    "Q: Did you hear about the zoo that only had one animal?": "A: It was a shih tzu",
+    "Q: What did Batman say to Robin before they got in the car?":  "A: Robin, get in the car.",
+    "Q: What do you call a black guy who flies a plane?": "A: A pilot, you f*cking racist!",
+    "Q:  What musical instrument do a pair of sheep play?": "A: The two-baaaa.",
+    "Q: What’s the name of the French shoe inventor?": "A: Phil-lip Phil-lop",
 }
 
 

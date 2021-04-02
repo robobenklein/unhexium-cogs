@@ -192,6 +192,7 @@ class SzuruPoster(commands.Cog):
         api_token = await ctx.cfg_member.szurutoken()
         auth = stringToBase64(f"{api_user}:{api_token}")
 
+        # TODO switch back to async request
         # # print(f"filecontent type: {type(filecontent)} size {len(filecontent)}")
         # with aiohttp.MultipartWriter('mixed') as mpwriter:
         #     part = mpwriter.append(
@@ -235,6 +236,7 @@ class SzuruPoster(commands.Cog):
         api_token = await ctx.cfg_member.szurutoken()
         auth = stringToBase64(f"{api_user}:{api_token}")
 
+        # TODO async
         req = requests.Request(
             'POST',
             f"{au}/posts/",
@@ -336,12 +338,22 @@ class SzuruPoster(commands.Cog):
         embed = discord.Embed(
             title=f"Post {data['id']}",
             url=data['_']['link'],
-            description="TODO",
+            # description="TODO",
         )
         if data['_']['user']:
             embed.set_author(**data['_']['user'])
         if include_image:
             embed.set_image(url=data['_']['link'])
+        # 'tags': [{'names': ['animal_ears'], 'category': 'default', 'usages': 260}, {'names': ['cat_tail'], 'category': 'default', 'usages': 62},
+        if data['tags']:
+            embed.add_field(
+                name="Tags",
+                value=', '.join([
+                    f"{x['names'][0]} ({x['usages']})"
+                    for x in data['tags']
+                ]),
+                inline=False,
+            )
         if data['score']:
             embed.add_field(
                 name="Votes",
@@ -360,7 +372,7 @@ class SzuruPoster(commands.Cog):
                 value=data['type'],
                 inline=True,
             )
-        if data['relations']:
+        if 'relations' in data and data['relations']:
             embed.add_field(
                 name="Related",
                 value=', '.join([str(x['id']) for x in data['relations']]),
@@ -566,7 +578,7 @@ class SzuruPoster(commands.Cog):
     async def szuru_tag(self, ctx: commands.Context, postid: int, operation: str, *tags):
         raise NotImplementedError()
 
-    @szuru.command(name='seach', aliases=['query', 'find'])
+    @szuru.command(name='search', aliases=['query', 'find'])
     async def search_posts(self, ctx: commands.Context, *query):
         """Search posts by query"""
         async with ctx.typing():

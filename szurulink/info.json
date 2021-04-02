@@ -5,6 +5,6 @@
   "disabled" : false,
   "hidden": false,
   "short" : "szurulink",
-  "description" : "Search a Szurubooru and post images from it automatically",
+  "description" : "Szurubooru interface to upload posts, search, and automatically post new uploads.",
   "tags": ["images", "scheduled", "booru", "szurubooru"]
 }

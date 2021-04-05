@@ -132,7 +132,7 @@ class SzuruPoster(commands.Cog):
 
     async def get_file_from_post_data(self, data):
         attach = discord.File(
-            await self.get_url_file_buffer(data['_']['link']),
+            await self.get_url_file_buffer(data['_']['media_url']),
             filename=data['_']['filename'],
             spoiler=data['_']['unsafe'],
         )
@@ -230,36 +230,36 @@ class SzuruPoster(commands.Cog):
         )
         return r.json()
 
-    async def user_api_upload_post(self, ctx, json_data, filecontent):
-        au = await self.get_api_url(ctx)
-        api_user = await ctx.cfg_member.szuruname()
-        api_token = await ctx.cfg_member.szurutoken()
-        auth = stringToBase64(f"{api_user}:{api_token}")
-
-        # TODO async
-        req = requests.Request(
-            'POST',
-            f"{au}/posts/",
-            data=json_data,
-            files={
-                # "json": (None, json.dumps(json_data), 'application/json'),
-                "content": ('discord-upload', BytesIO(filecontent), 'image/unknown'),
-            },
-            headers={
-                'Authorization': f"Token {auth}",
-                'Accept': 'application/json',
-            },
-        )
-        prepped = req.prepare()
-        print(prepped.body.decode('ascii', errors='ignore'))
-        headers = '\n'.join(['{}: {}'.format(*hv) for hv in prepped.headers.items()])
-        print(headers)
-
-        with requests.Session() as s:
-            r = s.send(prepped)
-            print(r)
-            r.raise_for_status()
-            return r.json()
+    # async def user_api_upload_post(self, ctx, json_data, filecontent):
+    #     au = await self.get_api_url(ctx)
+    #     api_user = await ctx.cfg_member.szuruname()
+    #     api_token = await ctx.cfg_member.szurutoken()
+    #     auth = stringToBase64(f"{api_user}:{api_token}")
+    #
+    #     # TODO async
+    #     req = requests.Request(
+    #         'POST',
+    #         f"{au}/posts/",
+    #         data=json_data,
+    #         files={
+    #             # "json": (None, json.dumps(json_data), 'application/json'),
+    #             "content": ('discord-upload', BytesIO(filecontent), 'image/unknown'),
+    #         },
+    #         headers={
+    #             'Authorization': f"Token {auth}",
+    #             'Accept': 'application/json',
+    #         },
+    #     )
+    #     prepped = req.prepare()
+    #     print(prepped.body.decode('ascii', errors='ignore'))
+    #     headers = '\n'.join(['{}: {}'.format(*hv) for hv in prepped.headers.items()])
+    #     print(headers)
+    #
+    #     with requests.Session() as s:
+    #         r = s.send(prepped)
+    #         print(r)
+    #         r.raise_for_status()
+    #         return r.json()
 
     async def user_api_post(self, ctx, path, *, json_data = {}):
         au = await self.get_api_url(ctx)
@@ -294,7 +294,9 @@ class SzuruPoster(commands.Cog):
         cu = await ctx.cfg_channel.api_url()
         unsafe = True if data['safety'] == "unsafe" else False
         data['_'] = {
-            "link": f"{cu}/{data['contentUrl']}",
+            "media_url": f"{cu}/{data['contentUrl']}",
+            "post_url": f"{cu}/post/{data['id']}",
+            "embed_visible": False if data['type'] == 'video' else True,
             "unsafe": unsafe,
             "filename": data['contentUrl'].split('/')[-1],
             "user": None,
@@ -337,13 +339,13 @@ class SzuruPoster(commands.Cog):
     async def post_data_to_embed(self, data, *, include_image=True):
         embed = discord.Embed(
             title=f"Post {data['id']}",
-            url=data['_']['link'],
+            url=data['_']['post_url'],
             # description="TODO",
         )
         if data['_']['user']:
             embed.set_author(**data['_']['user'])
         if include_image:
-            embed.set_image(url=data['_']['link'])
+            embed.set_image(url=data['_']['media_url'])
         # 'tags': [{'names': ['animal_ears'], 'category': 'default', 'usages': 260}, {'names': ['cat_tail'], 'category': 'default', 'usages': 62},
         if data['tags']:
             embed.add_field(
@@ -387,7 +389,7 @@ class SzuruPoster(commands.Cog):
         """Base command for SzuruLink"""
         pass
 
-    @szuru.group(name='set', aliases=["s"])
+    @szuru.group(name='set', aliases=["setting"])
     @commands.admin()
     async def szuru_set(self, ctx: commands.Context):
         """SzuruLink settings"""
@@ -452,6 +454,7 @@ class SzuruPoster(commands.Cog):
         """Login with this bot in order to upload content to the szuru via discord
 
         I will ask for an account token via DMs, so please ensure server member DMs are enabled, at least temporarily.
+        I will try to delete your initial command containing your username once you've logged in successfully.
         """
         cu = await ctx.cfg_channel.api_url()
         if user is None:
@@ -499,6 +502,14 @@ class SzuruPoster(commands.Cog):
                 await ctx.message.delete()
                 await promptmsg.delete()
 
+    @szuru.command(name='register')
+    async def user_registration_process(self, ctx: commands.Context, username: str = None):
+        """Interactively register a new account on the szuru
+
+        To ensure the privacy of the process, I will DM you to ask for more information. Please ensure server member DMs are enabled, at least temporarily.
+        """
+        raise NotImplementedError("Command not yet implemented!") # TODO
+
     @szuru.command(name='logout')
     async def user_logout_process(self, ctx: commands.Context):
         """Delete your szuru account info from this bot.
@@ -514,14 +525,17 @@ class SzuruPoster(commands.Cog):
 
     @szuru.command(name='upload', aliases=['u'])
     async def upload_new_post(self, ctx: commands.Context, safety: str, *tags):
-        """Upload media via discord message attachment
+        """Upload media to the szuru via discord
 
         Specify 'anon' or 'anonymous' after the safety to upload anonymously.
+        To upload via URL, first ensure you have permission on the site to use the URL uploader. (Check for a URL box on the upload page.)
         """
         safety = safety.lower()
         if safety not in ['safe', 'sketchy', 'unsafe']:
             raise ValueError(f"Must specify safety: safe, sketchy, or unsafe")
         anon = False
+        urls = []
+        sources = []
         tags = list(tags)
         if 'anonymous' in tags:
             anon = True
@@ -529,24 +543,48 @@ class SzuruPoster(commands.Cog):
         if 'anon' in tags:
             anon = True
             tags.remove('anon')
-        if not ctx.message.attachments:
-            raise ValueError(f"Please attach the media to upload to your discord message!")
+        for tag in tags:
+            if '://' in tag:
+                url = tag.strip('<>')
+                urls.append(url)
+                tags.remove(tag)
 
+        if not ctx.message.attachments and not urls:
+            raise ValueError(f"Please attach the media to upload to your discord message!")
+        if len(urls) > 1:
+            await ctx.send(f"Notice: Only one post will be created per command, assuming multiple URLs are all sources for the same media.")
+
+        if urls:
+            sources += urls
+        if not anon:
+            sources.append(ctx.message.jump_url)
+
+        jdata = {
+            "safety": safety,
+            "tags": tags,
+            "anonymous": anon,
+            "source": '\n'.join(sources)
+        }
+
+        # communicating with the szuru / waiting work
         async with ctx.typing():
-            filebytes = await ctx.message.attachments[0].read()
-            # rdata = await self.user_api_upload_tempfile(
-            #     ctx,
-            #     json_data=jdata,
-            #     filecontent=filebytes,
-            # )
-            filetokenresp = await self.user_api_upload_tempfile(ctx, filebytes)
+            if ctx.message.attachments:
+                filebytes = await ctx.message.attachments[0].read()
+                filetokenresp = await self.user_api_upload_tempfile(ctx, filebytes)
+            elif urls:
+                # get image via URL, get token for it
+                filetokenresp = await self.user_api_post(
+                    ctx, f"/uploads",
+                    json_data={
+                        "contentUrl": urls[0],
+                    }
+                )
+            else:
+                raise ValueError(f"You didn't give me something to upload!")
             print(f"file token: {filetokenresp}")
-            jdata = {
-                "safety": safety,
-                "tags": tags,
-                "anonymous": anon,
-                "contentToken": filetokenresp['token'],
-            }
+            jdata["contentToken"] = filetokenresp['token']
+            # TODO check image similarity
+
             # print(jdata)
             rdata = await self.user_api_post(
                 ctx, f"/posts/",
@@ -560,6 +598,8 @@ class SzuruPoster(commands.Cog):
                 f"Uploaded!",
                 embed=post_e,
             )
+            # update user's "last seen"
+            await self.user_api_login_bump(ctx)
 
     @szuru.command(name='post', aliases=['p'])
     async def get_post(self, ctx: commands.Context, postid: int):
@@ -576,9 +616,15 @@ class SzuruPoster(commands.Cog):
 
     @szuru.command(name='tag', aliases=['t', 'tags'])
     async def szuru_tag(self, ctx: commands.Context, postid: int, operation: str, *tags):
-        raise NotImplementedError()
+        """Modify tags on a post by ID
 
-    @szuru.command(name='search', aliases=['query', 'find'])
+        Must be logged in to edit post tags.
+        Prefix a tag with `-` (minus / dash) to remove that tag.
+        Apply operation to multiple posts by separating post IDs with a comma. (`,`)
+        """
+        raise NotImplementedError(f"Work in progress!") # TODO
+
+    @szuru.command(name='search', aliases=['query', 'find', 'f', 's'])
     async def search_posts(self, ctx: commands.Context, *query):
         """Search posts by query"""
         async with ctx.typing():

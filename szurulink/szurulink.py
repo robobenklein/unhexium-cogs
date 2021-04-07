@@ -21,7 +21,7 @@ import aiohttp
 from redbot.core import commands
 from redbot.core import Config, commands, checks
 from redbot.core.bot import Red
-from redbot.core.utils.chat_formatting import pagify, warning, box
+from redbot.core.utils.chat_formatting import pagify, warning, box, spoiler
 from redbot.core.i18n import Translator
 
 class dotdict(dict):
@@ -293,14 +293,19 @@ class SzuruPoster(commands.Cog):
     async def _augment_post_data(self, ctx, data: dict):
         cu = await ctx.cfg_channel.api_url()
         unsafe = True if data['safety'] == "unsafe" else False
+        embed_visible = False if data['type'] == 'video' else True
         data['_'] = {
             "media_url": f"{cu}/{data['contentUrl']}",
             "post_url": f"{cu}/post/{data['id']}",
-            "embed_visible": False if data['type'] == 'video' else True,
+            "embed_visible": embed_visible,
             "unsafe": unsafe,
             "filename": data['contentUrl'].split('/')[-1],
             "user": None,
+            "should_embed": not unsafe and embed_visible,
+            "message_content": f"{cu}/{data['contentUrl']}",
         }
+        if unsafe:
+            data['_']["message_content"] = spoiler(data['_']["message_content"])
         if 'user' in data and data['user']:
             data['_']["user"] = {
                 "icon_url": f"{cu}/{data['user']['avatarUrl']}",
@@ -610,6 +615,7 @@ class SzuruPoster(commands.Cog):
             attach = await self.get_file_from_post_data(data)
 
             await ctx.send(
+                data['_']["message_content"] if not data['_']["should_embed"] else None,
                 embed=post_e,
                 # file=attach,
             )
@@ -645,6 +651,7 @@ class SzuruPoster(commands.Cog):
                 post_e = await self.post_data_to_embed(data)
                 attach = await self.get_file_from_post_data(data)
                 await ctx.send(
+                    data['_']["message_content"] if not data['_']["should_embed"] else None,
                     embed=post_e,
                     # file=attach,
                 )
@@ -686,7 +693,7 @@ class SzuruPoster(commands.Cog):
                 post_e = await self.post_data_to_embed(data)
                 attach = await self.get_file_from_post_data(data)
                 await ch.send(
-                    # f"Auto-Post:",
+                    data['_']["message_content"] if not data['_']["should_embed"] else None,
                     embed=post_e,
                 )
                 await cfg_channel.last_post_time.set(now)

@@ -302,10 +302,16 @@ class SzuruPoster(commands.Cog):
             "filename": data['contentUrl'].split('/')[-1],
             "user": None,
             "should_embed": not unsafe and embed_visible,
-            "message_content": f"{cu}/{data['contentUrl']}",
+            # "message_content": f"{cu}/{data['contentUrl']}",
         }
         if unsafe:
-            data['_']["message_content"] = spoiler(data['_']["message_content"])
+            data['_']["message_content"] = f"Post {data['id']}: {spoiler(data['_']['media_url'])}"
+        elif not embed_visible:
+            # TODO discord still won't render a preview :/
+            # maybe check size and upload if under limit?
+            data['_']["message_content"] = f"Post {data['id']}: {data['_']['media_url']}"
+        else:
+            data['_']["message_content"] = f"Post {data['id']}:"
         if 'user' in data and data['user']:
             data['_']["user"] = {
                 "icon_url": f"{cu}/{data['user']['avatarUrl']}",

@@ -21,7 +21,7 @@ import aiohttp
 from redbot.core import commands
 from redbot.core import Config, commands, checks
 from redbot.core.bot import Red
-from redbot.core.utils.chat_formatting import pagify, warning, box, spoiler
+from redbot.core.utils.chat_formatting import pagify, warning, box, spoiler, escape
 from redbot.core.i18n import Translator
 
 class dotdict(dict):
@@ -361,10 +361,10 @@ class SzuruPoster(commands.Cog):
         if data['tags']:
             embed.add_field(
                 name="Tags",
-                value=', '.join([
+                value=escape(', '.join([
                     f"{x['names'][0]} ({x['usages']})"
                     for x in data['tags']
-                ]),
+                ]), formatting=True),
                 inline=False,
             )
         if data['score']:

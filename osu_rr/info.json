@@ -1,0 +1,10 @@
+{
+  "author" : ["robobenklein", "sarkobor", "gmc1322"],
+  "install_msg" : "Ready to tap circles?",
+  "name" : "osu! rank reporter",
+  "disabled" : false,
+  "hidden": false,
+  "short" : "osu_rr",
+  "description" : "Show players' osu! rank in their nickname",
+  "tags": ["monitoring", "rank", "osu"]
+}

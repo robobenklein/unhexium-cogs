@@ -322,15 +322,9 @@ class OsuRankReporter(commands.Cog):
         """Base command for osu!rr"""
         pass
 
-    @osu.group(name='set', aliases=["setting", "settings"])
-    @commands.admin()
-    async def szuru_set(self, ctx: commands.Context):
-        """osu!rr settings base command"""
-        pass
-
-    @osu.command(name='register')
+    @osu.command(name='register', aliases=[])
     @commands.has_guild_permissions(administrator=True)
-    async def user_registration_process(self, ctx: commands.Context, user_mention, osu_username: str):
+    async def user_registration_process(self, ctx: commands.Context, user_mention: str, osu_username: str):
         """I only track the ranks of players who have been registered!
         """
         members = [m for m in ctx.message.mentions if not m.bot]
@@ -353,6 +347,25 @@ class OsuRankReporter(commands.Cog):
         await cfg_member.osu_id.set(osu_id)
 
         await ctx.send(f"Linked!")
+
+    @osu.command(name='unregister')
+    @commands.has_guild_permissions(administrator=True)
+    async def user_unregistration_process(self, ctx: commands.Context, user_mention):
+        """Tell me to stop tracking someone!
+        """
+        members = [m for m in ctx.message.mentions if not m.bot]
+        if 0 == len(members) > 1:
+            await ctx.send(f"Please only mention one user at a time!")
+            return
+        member = members[0]
+        cfg_member = self.config.member(member)
+        osu_id = await cfg_member.osu_id()
+        if not osu_id:
+            await ctx.send(f"They aren't registered currently!")
+            return
+        await cfg_member.osu_id.set(None)
+
+        await ctx.send(f"Unregistered!")
 
     @osu.command(name='show')
     @commands.cooldown(1, 1)
@@ -429,7 +442,7 @@ class OsuRankReporter(commands.Cog):
 
     @osu.command(name='update_all_nicks', aliases=['pprain'])
     @commands.cooldown(1, 60, BucketType.guild)
-    @commands.admin()
+    @commands.has_guild_permissions(administrator=True)
     async def update_all_user_nicks(self, ctx: commands.Context):
         print(f"Updating all nicks in {ctx.guild.name} at the request of {ctx.message.author.name} ({ctx.message.author.display_name})")
         async with ctx.typing():

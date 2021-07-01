@@ -3,3 +3,5 @@ fuzzywuzzy
 python-Levenshtein
 dateparser
 python-dateutil
+requests
+tenacity

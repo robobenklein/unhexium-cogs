@@ -17,7 +17,6 @@ from discord.ext import tasks
 from discord.ext.commands import BucketType
 import requests
 import aiohttp
-from si_prefix import si_format
 from tenacity import retry
 from tenacity.stop import stop_after_attempt
 from tenacity.wait import wait_random

@@ -359,12 +359,35 @@ class SzuruPoster(commands.Cog):
             embed.set_image(url=data['_']['media_url'])
         # 'tags': [{'names': ['animal_ears'], 'category': 'default', 'usages': 260}, {'names': ['cat_tail'], 'category': 'default', 'usages': 62},
         if data['tags']:
+            tag_string = escape(', '.join([
+                f"{x['names'][0]} ({x['usages']})"
+                for x in data['tags']
+            ]), formatting=True)
+            if len(tag_string) > 1000:
+                # discord limitation 1024 chars, choose which tags to show
+                default_tags = [tag for tag in data['tags'] if tag['category'] == 'default']
+                other_tags = [tag for tag in data['tags'] if tag['category'] != 'default']
+                default_tags.sort(key=lambda t: t['usages'])
+                other_tags.sort(key=lambda t: t['usages'])
+
+                tag_string = ""
+                next_tag_string = ""
+                while len(next_tag_string) < 950:
+                    tag_string = next_tag_string
+                    if other_tags:
+                        next_tag = other_tags.pop()
+                    elif default_tags:
+                        next_tag = default_tags.pop()
+                    else:
+                        break
+                    next_tag_string += f"{next_tag['names'][0]} ({next_tag['usages']}), "
+                remaining_tag_count = len(default_tags) + len(other_tags)
+                tag_string += f"\n{remaining_tag_count} more tag(s) not shown"
+                tag_string = escape(tag_string, formatting=True)
+
             embed.add_field(
                 name="Tags",
-                value=escape(', '.join([
-                    f"{x['names'][0]} ({x['usages']})"
-                    for x in data['tags']
-                ]), formatting=True),
+                value=tag_string,
                 inline=False,
             )
         if data['score']:
@@ -459,6 +482,15 @@ class SzuruPoster(commands.Cog):
         else:
             seconds = await ctx.cfg_guild.autopostseconds()
             await ctx.send(f"Currently posting every {seconds} seconds.")
+
+    @szuru_set.command(name='postnum', aliases=['post'])
+    async def set_post_number(self, ctx: commands.Context, post_num: int = 0):
+        """
+        Set the number of the latest post for autoposting.
+        """
+        await ctx.cfg_channel.current_post_num.set(post_num)
+        await ctx.send("Current auto-post number has been set to {}".format(post_num))
+        await ctx.cfg_channel.last_post_time.set(0)
 
     @szuru.command(name='login')
     async def user_login_process(self, ctx: commands.Context, user: str = None):

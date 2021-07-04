@@ -1,10 +1,11 @@
 {
-  "author" : ["robobenklein"],
+  "author" : ["robobenklein", "sarkobor"],
   "install_msg" : "SzuruLink installed! Please connect your instance next.",
   "name" : "SzuruLink",
   "disabled" : false,
   "hidden": false,
   "short" : "szurulink",
   "description" : "Szurubooru interface to upload, search, and automatically post new uploads.",
-  "tags": ["images", "scheduled", "booru", "szurubooru"]
+  "tags": ["images", "scheduled", "booru", "szurubooru"],
+  "requirements": ["requests", "aiohttp"]
 }

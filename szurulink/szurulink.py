@@ -372,7 +372,7 @@ class SzuruPoster(commands.Cog):
 
                 tag_string = ""
                 next_tag_string = ""
-                while len(next_tag_string) < 950:
+                while len(escape(next_tag_string, formatting=True)) < 950:
                     tag_string = next_tag_string
                     if other_tags:
                         next_tag = other_tags.pop()
@@ -381,9 +381,11 @@ class SzuruPoster(commands.Cog):
                     else:
                         break
                     next_tag_string += f"{next_tag['names'][0]} ({next_tag['usages']}), "
+                print(f"szurulink: snipped large tag list to {len(tag_string)} chars,")
                 remaining_tag_count = len(default_tags) + len(other_tags)
                 tag_string += f"\n{remaining_tag_count} more tag(s) not shown"
                 tag_string = escape(tag_string, formatting=True)
+                print(f"szurulink: total embed field length: {len(tag_string)}")
 
             embed.add_field(
                 name="Tags",

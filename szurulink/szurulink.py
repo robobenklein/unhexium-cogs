@@ -50,6 +50,7 @@ class SzuruPoster(commands.Cog):
     default_guild = {
         "autopostchannel": None,
         "autopostseconds": 3600,
+        "autopost_exclude_unsafe": False,
     }
     default_channel = {
         "time": {
@@ -485,6 +486,23 @@ class SzuruPoster(commands.Cog):
             seconds = await ctx.cfg_guild.autopostseconds()
             await ctx.send(f"Currently posting every {seconds} seconds.")
 
+    @szuru_set.command(name='exclude_unsafe', aliases=['skip_unsafe', 'excludeunsafe'])
+    async def set_exclude_unsafe(self, ctx: commands.Context, not_a_bool: str = ""):
+        """Set whether the autopost should exclude 'unsafe' posts or not
+        """
+        not_a_bool = not_a_bool.lower()
+        # default with no arguments: set it to exclude
+        if not_a_bool in ['true', 'yes', '1', 'exclude', '']:
+            actually_a_bool = True
+        else:
+            actually_a_bool = False
+
+        await ctx.cfg_guild.autopost_exclude_unsafe.set(actually_a_bool)
+        if actually_a_bool:
+            await ctx.send(f"Now unsafe posts will NOT be posted in this guild.")
+        else:
+            await ctx.send(f"Unsafe posts will be posted in this guild.")
+
     @szuru_set.command(name='postnum', aliases=['post'])
     async def set_post_number(self, ctx: commands.Context, post_num: int = 0):
         """
@@ -730,6 +748,14 @@ class SzuruPoster(commands.Cog):
             ctx.cfg_guild = cfg_guild
             try:
                 data = await self.get_post_by_id(ctx, last_post_id + 1)
+                # check should skip post
+                unsafe = True if data['safety'] == "unsafe" else False
+                if unsafe:
+                    should_exclude_unsafe = await cfg_guild.autopost_exclude_unsafe()
+                    if should_exclude_unsafe:
+                        # skip this post
+                        await cfg_channel.current_post_num.set(last_post_id + 1)
+                        continue
                 post_e = await self.post_data_to_embed(data)
                 attach = await self.get_file_from_post_data(data)
                 await ch.send(

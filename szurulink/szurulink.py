@@ -669,9 +669,10 @@ class SzuruPoster(commands.Cog):
             # print(rdata)
 
             data = await self._augment_post_data(ctx, rdata)
-            post_e = await self.post_data_to_embed(data)
+            post_e = await self.post_data_to_embed(data, include_image=False)
             await ctx.send(
                 f"Uploaded!",
+                reference=ctx.message,
                 embed=post_e,
             )
             # update user's "last seen"

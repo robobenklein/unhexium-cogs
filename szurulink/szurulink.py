@@ -40,6 +40,9 @@ def get_timestamp_seconds():
     ts = time.time()
     return int(ts)
 
+class SzuruLinkUserNotLoggedIn(RuntimeError):
+    pass
+
 
 class SzuruPoster(commands.Cog):
 
@@ -110,6 +113,7 @@ class SzuruPoster(commands.Cog):
         ctx.cfg_member = self.config.member(ctx.author)
 
     async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError):
+        print(f"sz: handling error {type(error)}: {error}")
         if isinstance(error, commands.MissingPermissions):
             await ctx.send('SzuruLink: do you have permission to do that?')
         elif isinstance(error, aiohttp.client_exceptions.ClientResponseError):
@@ -118,6 +122,8 @@ class SzuruPoster(commands.Cog):
             print(f"request: {error.request_info}")
             # print(f"")
             raise error
+        elif isinstance(error, discord.ext.commands.CommandInvokeError) and isinstance(error.original, SzuruLinkUserNotLoggedIn):
+            await ctx.send(f'SzuruLink: You aren\'t logged in!' + (f" {error.original}" if error.original.args else ""))
         else:
             await ctx.send('SzuruLink: An error occurred: {}'.format(str(error)))
             raise error
@@ -191,6 +197,8 @@ class SzuruPoster(commands.Cog):
         au = await self.get_api_url(ctx)
         api_user = await ctx.cfg_member.szuruname()
         api_token = await ctx.cfg_member.szurutoken()
+        if not api_user or not api_token:
+            raise SzuruLinkUserNotLoggedIn()
         auth = stringToBase64(f"{api_user}:{api_token}")
 
         # TODO switch back to async request
@@ -266,6 +274,8 @@ class SzuruPoster(commands.Cog):
         au = await self.get_api_url(ctx)
         api_user = await ctx.cfg_member.szuruname()
         api_token = await ctx.cfg_member.szurutoken()
+        if not api_user or not api_token:
+            raise SzuruLinkUserNotLoggedIn()
         auth = stringToBase64(f"{api_user}:{api_token}")
 
         r = await self.session.post(
@@ -631,19 +641,22 @@ class SzuruPoster(commands.Cog):
 
         # communicating with the szuru / waiting work
         async with ctx.typing():
-            if ctx.message.attachments:
-                filebytes = await ctx.message.attachments[0].read()
-                filetokenresp = await self.user_api_upload_tempfile(ctx, filebytes)
-            elif urls:
-                # get image via URL, get token for it
-                filetokenresp = await self.user_api_post(
-                    ctx, f"/uploads",
-                    json_data={
-                        "contentUrl": urls[0],
-                    }
-                )
-            else:
-                raise ValueError(f"You didn't give me something to upload!")
+            try:
+                if ctx.message.attachments:
+                    filebytes = await ctx.message.attachments[0].read()
+                    filetokenresp = await self.user_api_upload_tempfile(ctx, filebytes)
+                elif urls:
+                    # get image via URL, get token for it
+                    filetokenresp = await self.user_api_post(
+                        ctx, f"/uploads",
+                        json_data={
+                            "contentUrl": urls[0],
+                        }
+                    )
+                else:
+                    raise ValueError(f"You didn't give me something to upload!")
+            except SzuruLinkUserNotLoggedIn as e:
+                raise SzuruLinkUserNotLoggedIn(f"You need to be logged in to upload posts!")
             print(f"file token: {filetokenresp}")
             jdata["contentToken"] = filetokenresp['token']
             # TODO check image similarity

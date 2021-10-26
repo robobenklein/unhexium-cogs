@@ -621,14 +621,6 @@ class SzuruPoster(commands.Cog):
                 url = tag.strip('<>')
                 urls.append(url)
                 tags.remove(tag)
-        # Checks to see if any of the tags being uploaded has implied tags that should also be applied to the post.
-        for tag in tags:
-            tagDL = await self.api_get(ctx, f"/tag/{tag}"}
-            if 'name' in tagDL and tagDL['name'] == "TagNotFoundError":
-                print("New Tag")
-            else:
-                for implied_tag in tagDL['implications']:
-                    tags.append(implied_tag['names'][0])
 
         if not ctx.message.attachments and not urls:
             raise ValueError(f"Please attach the media to upload to your discord message!")
@@ -640,15 +632,24 @@ class SzuruPoster(commands.Cog):
         if not anon:
             sources.append(ctx.message.jump_url)
 
-        jdata = {
-            "safety": safety,
-            "tags": tags,
-            "anonymous": anon,
-            "source": '\n'.join(sources)
-        }
-
         # communicating with the szuru / waiting work
         async with ctx.typing():
+            # Checks to see if any of the tags being uploaded has implied tags that should also be applied to the post.
+            for tag in tags:
+                tagDL = await self.api_get(ctx, f"/tag/{tag}")
+                if 'name' in tagDL and tagDL['name'] == "TagNotFoundError":
+                    print(f"sz: New Tag: {tag}")
+                else:
+                    for implied_tag in tagDL['implications']:
+                        tags.append(implied_tag['names'][0])
+
+            jdata = {
+                "safety": safety,
+                "tags": tags,
+                "anonymous": anon,
+                "source": '\n'.join(sources)
+            }
+
             try:
                 if ctx.message.attachments:
                     filebytes = await ctx.message.attachments[0].read()

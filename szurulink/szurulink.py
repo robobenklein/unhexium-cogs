@@ -621,6 +621,14 @@ class SzuruPoster(commands.Cog):
                 url = tag.strip('<>')
                 urls.append(url)
                 tags.remove(tag)
+        # Checks to see if any of the tags being uploaded has implied tags that should also be applied to the post.
+        for tag in tags:
+            tagDL = await self.api_get(ctx, f"/tag/{tag}"}
+            if 'name' in tagDL and tagDL['name'] == "TagNotFoundError":
+                print("New Tag")
+            else:
+                for implied_tag in tagDL['implications']:
+                    tags.append(implied_tag['names'][0])
 
         if not ctx.message.attachments and not urls:
             raise ValueError(f"Please attach the media to upload to your discord message!")

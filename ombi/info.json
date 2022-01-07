@@ -1,0 +1,10 @@
+{
+  "author" : ["robobenklein"],
+  "install_msg" : "Be sure to set your Ombi URL and ApiKey!",
+  "name" : "Red Ombi Requester",
+  "disabled" : false,
+  "hidden": false,
+  "short" : "ror",
+  "description" : "Allow users to request movies and shows to be imported via Ombi",
+  "tags": ["movies", "tv", "ombi"]
+}

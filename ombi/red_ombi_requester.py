@@ -48,7 +48,7 @@ POSTER_URL_BASE = "https://image.tmdb.org/t/p/w300"
 
 class EntrySelectMenu(menus.MenuPages):
     def __init__(self, source, **kwargs):
-        super().__init__(source, timeout=30.0, delete_message_after=True, **kwargs)
+        super().__init__(source, timeout=300.0, delete_message_after=True, **kwargs)
 
         self.selected = None
         self.index = None
@@ -310,6 +310,10 @@ class RedOmbiRequester(commands.Cog):
             return await ctx.send_help()
         results = await self.get_movies_by_query(ctx, " ".join(search))
 
+        if not results:
+            await ctx.reply(f"I couldn't find anything matching that search!")
+            return
+
         selected = await self.select_entry_menu(ctx, results)
         if selected is None:
             return
@@ -326,6 +330,8 @@ class RedOmbiRequester(commands.Cog):
             await ctx.send(f"Request sent successfully! {req_res['message']}")
         elif req_res["errorCode"] == "AlreadyRequested":
             await ctx.send(f"The request already exists! {req_res['errorMessage']}")
+        elif req_res["isError"] and req_res["errorCode"] is None:
+            await ctx.send(f"{req_res['errorMessage']}")
         elif "errorCode" in req_res:
             await ctx.send(f"Something went wrong... pls report this error: {req_res['errorCode']}")
             print(f"HALP! {req_res}")
@@ -341,6 +347,67 @@ class RedOmbiRequester(commands.Cog):
             return await ctx.send_help()
         results = await self.get_shows_by_query(ctx, " ".join(search))
 
+        if not results:
+            await ctx.reply(f"I couldn't find anything matching that search!")
+            return
+
         selected = await self.select_entry_menu(ctx, results)
         if selected is None:
             return
+
+        show_id = selected["id"]
+        show_info = await self.api_get(
+            ctx, f"/v2/Search/tv/{show_id}",
+        )
+        requestable_seasons = []
+        for season_req in show_info["seasonRequests"]:
+            requestable_seasons.append(season_req["seasonNumber"])
+
+        # ask for a season number to fetch
+        def check(msg):
+            if msg.channel != ctx.channel:
+                return False
+            elif msg.author != ctx.author:
+                return False
+            try:
+                num = int(msg.content)
+                return True
+            except ValueError:
+                return False
+        try:
+            await ctx.send(f"Which season? Options: {requestable_seasons}")
+            msg = await self.bot.wait_for("message", timeout=30, check=check)
+            season_num = int(msg.content)
+        except asyncio.TimeoutError:
+            await ctx.send("Season selection timed out.")
+            return
+
+        req_res = await self.api_post(
+            ctx, "/v2/Requests/tv",
+            json_data={
+                "theMovieDbId": selected["id"],
+                "requestedByAlias": ctx.author.name,
+                "requestAll": False,
+                "latestSeason": False,
+                "firstSeason": False,
+                "seasons": [
+                    {
+                        "seasonNumber": season_num,
+                    }
+                ],
+            }
+        )
+
+        print(f"tv request response: {req_res}")
+        if req_res["result"]:
+            await ctx.send(f"Request sent successfully!")
+        elif req_res["errorCode"] == "AlreadyRequested":
+            await ctx.send(f"Looks like it's already been requested! {req_res['errorMessage']}")
+        elif req_res["isError"] and req_res["errorCode"] is None:
+            await ctx.send(f"{req_res['errorMessage']}")
+        elif "errorCode" in req_res:
+            await ctx.send(f"Something went wrong... pls report this error: {req_res['errorCode']}")
+            print(f"HALP! {req_res}")
+        else:
+            await ctx.send(f"Something went wrong... pls report this error!")
+            print(f"HALP! {req_res}")

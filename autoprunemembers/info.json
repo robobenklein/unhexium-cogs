@@ -1,0 +1,10 @@
+{
+  "author" : ["robobenklein"],
+  "install_msg" : "",
+  "name" : "Auto Prune Members",
+  "disabled" : false,
+  "hidden": false,
+  "short" : "apm",
+  "description" : "Automatically kick guild members without a role after they've been in the server for some time.",
+  "tags": ["kick", "prune", "members", "admin"]
+}

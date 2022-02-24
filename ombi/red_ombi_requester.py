@@ -48,7 +48,7 @@ POSTER_URL_BASE = "https://image.tmdb.org/t/p/w300"
 
 class EntrySelectMenu(menus.MenuPages):
     def __init__(self, source, **kwargs):
-        super().__init__(source, timeout=300.0, delete_message_after=True, **kwargs)
+        super().__init__(source, timeout=300, delete_message_after=True, **kwargs)
 
         self.selected = None
         self.index = None
@@ -59,7 +59,7 @@ class EntrySelectMenu(menus.MenuPages):
 
     async def prompt(self, ctx):
         await self.start(ctx, wait=True)
-        # return self._source.entries[self.current_page]
+        #return self._source.entries[self.current_page]
         return self.selected
 
 class EntryEmbedPageSource(menus.ListPageSource):
@@ -93,7 +93,9 @@ class RedOmbiRequester(commands.Cog):
     default_guild = {
         "requestchannels": [],
     }
-    default_channel = {}
+    default_channel = {
+        "pending_requests": [],
+    }
     default_member = {
         "requests": [],
     }
@@ -314,7 +316,10 @@ class RedOmbiRequester(commands.Cog):
             await ctx.reply(f"I couldn't find anything matching that search!")
             return
 
-        selected = await self.select_entry_menu(ctx, results)
+        if len(results) == 1:
+            selected = results[0]
+        else:
+            selected = await self.select_entry_menu(ctx, results)
         if selected is None:
             return
 
@@ -328,16 +333,23 @@ class RedOmbiRequester(commands.Cog):
 
         if req_res["result"]:
             await ctx.send(f"Request sent successfully! {req_res['message']}")
+            print(f"SUCCESS: {req_res}")
         elif req_res["errorCode"] == "AlreadyRequested":
             await ctx.send(f"The request already exists! {req_res['errorMessage']}")
+            return
         elif req_res["isError"] and req_res["errorCode"] is None:
             await ctx.send(f"{req_res['errorMessage']}")
+            return
         elif "errorCode" in req_res:
             await ctx.send(f"Something went wrong... pls report this error: {req_res['errorCode']}")
             print(f"HALP! {req_res}")
+            return
         else:
             await ctx.send(f"Something went wrong... pls report this error!")
             print(f"HALP! {req_res}")
+            return
+
+        # add to pending_requests to wait for download completion
 
     @commands.command(name='tv')
     async def request_tv(self, ctx: commands.Context, *search: str):
@@ -351,7 +363,10 @@ class RedOmbiRequester(commands.Cog):
             await ctx.reply(f"I couldn't find anything matching that search!")
             return
 
-        selected = await self.select_entry_menu(ctx, results)
+        if len(results) == 1:
+            selected = results[0]
+        else:
+            selected = await self.select_entry_menu(ctx, results)
         if selected is None:
             return
 
@@ -401,13 +416,28 @@ class RedOmbiRequester(commands.Cog):
         print(f"tv request response: {req_res}")
         if req_res["result"]:
             await ctx.send(f"Request sent successfully!")
+            print(f"SUCCESS: {req_res}")
         elif req_res["errorCode"] == "AlreadyRequested":
             await ctx.send(f"Looks like it's already been requested! {req_res['errorMessage']}")
+            return
         elif req_res["isError"] and req_res["errorCode"] is None:
             await ctx.send(f"{req_res['errorMessage']}")
+            return
         elif "errorCode" in req_res:
             await ctx.send(f"Something went wrong... pls report this error: {req_res['errorCode']}")
             print(f"HALP! {req_res}")
+            return
         else:
             await ctx.send(f"Something went wrong... pls report this error!")
             print(f"HALP! {req_res}")
+            return
+
+        # add to pending_requests to wait for download completion
+
+    ### Task
+
+    @tasks.loop(seconds=67.0)
+    async def check_request_progress(self):
+        for guild in self.bot.guilds:
+            cfg_guild = self.config.guild(guild)
+            channel = await cfg_guild.requestchannels()

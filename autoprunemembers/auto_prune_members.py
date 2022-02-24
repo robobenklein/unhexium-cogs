@@ -103,7 +103,10 @@ class AutoPruneMembers(commands.Cog):
     @ap.command(name="setchannel", aliases=["setch"])
     @commands.admin()
     async def set_logging_channel(self, ctx, channel: discord.TextChannel = None):
-        """Enable or disable the auto-pruning of members by setting the channel to report to."""
+        """Enable or disable the auto-pruning of members by setting the channel to report to.
+
+        Unset the channel (and disable the auto-prune) by just running this command with no arguments.
+        """
         # channels = await ctx.cfg_guild.requestchannels()
         if channel is None:
             await ctx.cfg_guild.target_channel.set(None)
@@ -114,7 +117,10 @@ class AutoPruneMembers(commands.Cog):
     @ap.command(name="settimeout", aliases=["settime", "time"])
     @commands.admin()
     async def set_autoprune_timeout(self, ctx, time_amount: str = None):
-        """Set how long a user should be kicked after if they have no roles."""
+        """Set how long a user should be kicked after if they have no roles.
+
+        Default is "24hrs", specify any time interval, such as "1week" or "2 hours"
+        """
         if not time_amount:
             seconds = await ctx.cfg_guild.timeout_secs()
             return await ctx.reply(f"User pruning timeout is currently set to {seconds} seconds.")

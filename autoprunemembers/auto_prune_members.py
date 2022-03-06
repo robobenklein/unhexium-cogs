@@ -161,6 +161,7 @@ class AutoPruneMembers(commands.Cog):
                     if (get_timestamp_seconds() - timeout_secs) > mcfg["first_seen_ts"]:
                         try:
                             await member.kick()
+                            del mcfg["first_seen_ts"]
                             print(f"Kicked roleless member {member.name} for auto-prune.")
                             await channel.send(f"Kicked {member.mention} (id {member.id})")
                         except Exception as e:

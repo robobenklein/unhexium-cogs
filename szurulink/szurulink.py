@@ -306,7 +306,7 @@ class SzuruPoster(commands.Cog):
         unsafe = True if data['safety'] == "unsafe" else False
         embed_visible = False if data['type'] == 'video' else True
         data['_'] = {
-            "media_url": f"{cu}/{data['contentUrl']}",
+            "media_url": f"{cu}/{data['contentUrl']}" if "://" not in data['contentUrl'] else data['contentUrl'],
             "post_url": f"{cu}/post/{data['id']}",
             "embed_visible": embed_visible,
             "unsafe": unsafe,
@@ -325,7 +325,7 @@ class SzuruPoster(commands.Cog):
             data['_']["message_content"] = f"Post {data['id']}:"
         if 'user' in data and data['user']:
             data['_']["user"] = {
-                "icon_url": f"{cu}/{data['user']['avatarUrl']}",
+                "icon_url": f"{cu}/{data['user']['avatarUrl']}" if "://" not in data['user']['avatarUrl'] else data['user']['avatarUrl'],
                 "name": data['user']['name'],
                 "url": f"{cu}/user/{data['user']['name']}",
             }

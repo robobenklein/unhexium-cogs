@@ -286,6 +286,7 @@ class SzuruPoster(commands.Cog):
                 'Accept': 'application/json',
             },
             json=json_data,
+            raise_for_status=True,
         )
         try:
             print(f"resp {r} {r.status}:")
@@ -656,12 +657,15 @@ class SzuruPoster(commands.Cog):
                     filetokenresp = await self.user_api_upload_tempfile(ctx, filebytes)
                 elif urls:
                     # get image via URL, get token for it
-                    filetokenresp = await self.user_api_post(
-                        ctx, f"/uploads",
-                        json_data={
-                            "contentUrl": urls[0],
-                        }
-                    )
+                    try:
+                        filetokenresp = await self.user_api_post(
+                            ctx, f"/uploads",
+                            json_data={
+                                "contentUrl": urls[0],
+                            }
+                        )
+                    except aiohttp.client_exceptions.ClientResponseError as e:
+                        raise ValueError(f"Could not upload! The server could not / is not able to handle that.")
                 else:
                     raise ValueError(f"You didn't give me something to upload!")
             except SzuruLinkUserNotLoggedIn as e:

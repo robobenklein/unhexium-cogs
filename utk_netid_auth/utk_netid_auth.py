@@ -197,6 +197,7 @@ class UtkNetidAuth(commands.Cog):
 
     @auth.command(name='netid')
     async def auth_with_netid(self, ctx: commands.Context, netid: str):
+        """Authenticate using a netid"""
         async with ctx.typing():
             domain = await ctx.cfg_guild.default_email_domain()
             if not domain:

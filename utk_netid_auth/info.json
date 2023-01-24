@@ -1,0 +1,11 @@
+{
+  "author" : ["robobenklein"],
+  "install_msg" : "Remember to configure the bot!",
+  "name" : "UTK NetID Authentication",
+  "disabled" : false,
+  "hidden": false,
+  "short" : "utk_netid_auth",
+  "description" : "Authenticate Discord users with UTK's student directory.",
+  "tags": ["auth", "authentication", "utk", "netid"],
+  "requirements": ["requests", "aiohttp", "vobject"],
+}

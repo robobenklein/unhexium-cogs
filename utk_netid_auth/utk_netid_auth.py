@@ -1,5 +1,6 @@
 
 import asyncio
+import concurrent.futures
 import functools
 import itertools
 import math
@@ -11,6 +12,11 @@ import time
 import urllib
 import json
 import string
+import os
+import smtplib
+import textwrap
+from email.message import EmailMessage
+from email.utils import formatdate
 
 import discord
 from async_timeout import timeout
@@ -59,6 +65,7 @@ class UtkNetidAuth(commands.Cog):
         "authenticated_ts": None, # when they authenticated successfully
         "netid": None,
         "verifications": [], # codes sent for verification checks: {code, email, ts}
+        # "valid_verifications": [], # TODO
     }
     default_member = {
         "authenticated": False,
@@ -69,19 +76,18 @@ class UtkNetidAuth(commands.Cog):
         self.bot = bot
 
         self.config = Config.get_conf(self, identifier=56988813)
-        self.session = aiohttp.ClientSession(
-            loop=bot.loop,
-            raise_for_status=True,
-            timeout=aiohttp.ClientTimeout(total=30),
-        )
+        # self.session = aiohttp.ClientSession(
+        #     loop=bot.loop,
+        #     raise_for_status=True,
+        #     timeout=aiohttp.ClientTimeout(total=30),
+        # )
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
         self.config.register_global(**self.default_global)
         self.config.register_guild(**self.default_guild)
         self.config.register_channel(**self.default_channel)
         self.config.register_user(**self.default_user)
         self.config.register_member(**self.default_member)
-
-        #
 
     async def cog_before_invoke(self, ctx: commands.Context):
         ctx.cfg_guild = self.config.guild(ctx.guild)
@@ -100,7 +106,40 @@ class UtkNetidAuth(commands.Cog):
             while code in [v['code'] for v in verifications]:
                 code = ''.join(random.choice(string.digits) for _ in range(4))
 
-            print(f"TODO, email to {email} with code {code}")
+            print(f"Send email to {email} with code {code}")
+
+            em = EmailMessage()
+            em.set_content(textwrap.dedent(f"""\
+            Your verification code is {code}.
+            It is valid for {CODE_VALID_MINUTES} minutes from when you sent your message.
+
+            Command to copy-paste:
+            utk auth verify {code}
+
+            This code was requested by Discord user {str(ctx.author)} in the server {str(ctx.guild)}.
+
+            If this was *not* requested by you, please let the admins or moderators of the server know.
+            """))
+            em['Subject'] = f"Your Discord verification code for {ctx.guild}"
+            em['From'] = os.environ.get('SMTP_FROM_ADDRESS')
+            em['To'] = email
+            em['Date'] = formatdate()
+
+            def send_da_mail():
+                s = smtplib.SMTP_SSL(
+                    host=os.environ.get('SMTP_HOST'),
+                )
+                print(f"SMTP connected, logging in ...")
+                s.login(os.environ.get('SMTP_USER'), os.environ.get('SMTP_PASSWORD'))
+                print(f"SMTP logged in, sending ...")
+                s.send_message(em)
+                print(f"SMTP done, disconnecting ...")
+                s.quit()
+
+            waiting_msg = await ctx.reply(f"Delivering email... please wait... (should not take more than 5 minutes)")
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(self.executor, send_da_mail)
+            await waiting_msg.delete()
 
             verifications.append({
                 'code': code,
@@ -126,7 +165,7 @@ class UtkNetidAuth(commands.Cog):
         #     f"Default email domain: {default_domain}"
         # ))
 
-    @admin.command(name='default_domain')
+    @admin.command(name='default_domain', aliases=['domain'])
     async def admin_set_default_email_domain(self, ctx: commands.Context, domain: str):
         """Set the default email domain for the guild."""
         await ctx.cfg_guild.default_email_domain.set(domain)
@@ -173,6 +212,12 @@ class UtkNetidAuth(commands.Cog):
     async def auth_verify(self, ctx: commands.Context, code: str):
         """Verify a code that was sent to you."""
         async with ctx.typing():
+            # clear out expired:
+            async with ctx.cfg_user.verifications() as verifications:
+                for i, v in list(enumerate(verifications)):
+                    if v['ts'] < get_timestamp_seconds() - (CODE_VALID_MINUTES*60):
+                        verifications.remove(v)
+
             verifications = await ctx.cfg_user.verifications()
 
             if code not in [v['code'] for v in verifications]:

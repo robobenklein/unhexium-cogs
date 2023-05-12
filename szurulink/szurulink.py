@@ -11,14 +11,19 @@ import time
 from io import BytesIO
 import urllib
 import json
+import typing
+from enum import Enum
+from operator import itemgetter
 
 import discord
+import discord.ui
 from async_timeout import timeout
 from discord.ext import tasks
+import discord.ext.commands
 import requests
 import aiohttp
 
-from redbot.core import commands
+from redbot.core import commands, app_commands
 from redbot.core import Config, commands, checks
 from redbot.core.bot import Red
 from redbot.core.utils.chat_formatting import pagify, warning, box, spoiler, escape
@@ -42,6 +47,33 @@ def get_timestamp_seconds():
 
 class SzuruLinkUserNotLoggedIn(RuntimeError):
     pass
+
+class SzuruSafetyRating(Enum):
+    safe = 'safe'
+    sketchy = 'sketchy'
+    unsafe = 'unsafe'
+
+SzuruSafetyRatingEmoji = {
+    'safe': '🟩', # green
+    'sketchy': '🟨', # yellow
+    'unsafe': '🟥', # red
+}
+
+
+class SzuruPostUploadSafetyPrompt(discord.ui.View):
+    @discord.ui.select(options=[
+        discord.SelectOption(
+            label=r.value, emoji=SzuruSafetyRatingEmoji[r.value],
+        ) for r in SzuruSafetyRating
+    ])
+    async def on_safety_selected(
+            self, interaction: discord.Interaction,
+            selected,
+        ):
+        print(f"on_safety_selected: {type(selected)} {selected}")
+        # await interaction.response.send_message(f"Selected safety {selected.values}")
+        self.stop()
+        return selected.values[0]
 
 
 class SzuruPoster(commands.Cog):
@@ -84,6 +116,8 @@ class SzuruPoster(commands.Cog):
         self.config.register_channel(**self.default_channel)
         self.config.register_member(**self.default_member)
 
+        self._serverinfo_cache = dict()
+
         self.check_send_next_post.start()
 
     # def cog_unload(self):
@@ -111,6 +145,12 @@ class SzuruPoster(commands.Cog):
         ctx.cfg_guild = self.config.guild(ctx.guild)
         ctx.cfg_channel = self.config.channel(ctx.channel)
         ctx.cfg_member = self.config.member(ctx.author)
+
+    async def update_interaction_context(self, interaction: discord.Interaction, ctx: commands.Context):
+        """This function is different than cog_before_invoke because an interaction user may be different than the generated context object."""
+        ctx.cfg_guild = self.config.guild(ctx.guild)
+        ctx.cfg_channel = self.config.channel(ctx.channel)
+        ctx.cfg_member = self.config.member(interaction.user)
 
     async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError):
         print(f"sz: handling error {type(error)}: {error}")
@@ -148,6 +188,27 @@ class SzuruPoster(commands.Cog):
     async def get_api_url(self, ctx: commands.Context):
         cu = await ctx.cfg_channel.api_url()
         return f"{cu}/api"
+
+    async def get_server_info(self, ctx: commands.Context):
+        au = await self.get_api_url(ctx)
+        # no auth for server info path
+        r = await self.session.get(
+            f"{au}/info",
+            headers={
+                'Accept': 'application/json',
+            }
+        )
+        try:
+            info = await r.json()
+        except json.decoder.JSONDecodeError as e:
+            # what to do here?
+            raise e
+
+        self._serverinfo_cache[au] = info
+        return info
+
+    # async def does_server_use_safety(self, ctx: commands.Context):
+    #
 
     async def api_get(self, ctx: commands.Context, path):
         au = await self.get_api_url(ctx)
@@ -430,6 +491,140 @@ class SzuruPoster(commands.Cog):
             )
         return embed
 
+    async def prompt_user_about_similar_posts(self, ctx, similar_search_results):
+        """Returns a tuple (continue?, relations_to_add)
+        """
+        for_member = ctx.author
+        most_similar = sorted(
+            similar_search_results['similarPosts'],
+            key=itemgetter('distance')
+        )
+        # discord limits to 10 embeds:
+        most_similar = most_similar[:10]
+        embeds = {} # requiring ordered dicts here
+        for pr in most_similar:
+            pd = await self._augment_post_data(ctx, pr['post'])
+            e = await self.post_data_to_embed(pd)
+            # add similarity score:
+            # TODO
+            embeds[pr['post']['id']] = e
+
+        class GenericButton(discord.ui.Button):
+            async def callback(self, interaction: discord.Interaction):
+                if interaction.user != for_member:
+                    await interaction.response.send_message(
+                        content=f"That menu is in use by someone else!",
+                        ephemeral=True,
+                        delete_after=10,
+                    )
+                    print(f"blocked other user interaction")
+                    return
+                await self.view.button_pressed(self, interaction)
+                await interaction.response.defer()
+
+        class SimilarPostPagingView(discord.ui.View):
+            def __init__(self, ctx, post_embeds, *args, **kwargs):
+                """post_embeds is dict key->embed"""
+                super().__init__(*args, **kwargs)
+
+                self.embed_pages = post_embeds
+                self.cur_page = 0
+                self.continue_upload = False
+                self.selected_keys = []
+                self.buttons = {}
+                self.ctx = ctx
+                self.msg = None
+
+            async def start(self):
+                # create buttons:
+                buttons = {
+                    'prev': ("Previous", "arrow_right"),
+                    'toggle_relation': ("Add relation", "white_check_mark"),
+                    'cancel': ("Cancel upload", "x"),
+                    'next': ("Next", "arrow_left"),
+                }
+                for button_id, opts in buttons.items():
+                    b = GenericButton(
+                        custom_id=button_id,
+                        label=opts[0],
+                        # emoji=opts[1]
+                    )
+                    self.buttons[button_id] = b
+                    self.add_item(b)
+                self.buttons['prev'].disabled = True # on first page
+                self.buttons['next'].disabled = len(self.embed_pages) <= 1
+                self.msg = await self.ctx.send(
+                    content=f"Found similar posts, please review:",
+                    ephemeral=True,
+                    embed=list(self.embed_pages.values())[0],
+                    view=self,
+                )
+                return self.msg
+
+            async def button_pressed(self, button, interaction):
+                btn_id = button.custom_id
+
+                if btn_id == 'prev':
+                    if self.cur_page == 0:
+                        # TODO no-op
+                        pass
+                    else:
+                        self.cur_page -= 1
+                elif btn_id == 'next':
+                    if self.cur_page == len(self.embed_pages) - 1:
+                        # TODO no-op
+                        pass
+                    else:
+                        self.cur_page += 1
+                elif btn_id == 'toggle_relation':
+                    # which post?
+                    post_id = list(self.embed_pages.keys())[self.cur_page]
+                    if post_id in self.selected_keys:
+                        self.selected_keys.remove(post_id)
+                    else:
+                        self.selected_keys.append(post_id)
+                elif btn_id == 'cancel':
+                    self.stop()
+                    await self.msg.edit(
+                        content=f"Upload cancelled.",
+                        view=None, embed=None,
+                    )
+                    await self.msg.delete(delay=20)
+                    return # do not proceed to below
+
+                # update buttons and message:
+                if btn_id in ['prev', 'next']:
+                    if self.cur_page == 0:
+                        self.buttons['prev'].disabled = True
+                    else:
+                        self.buttons['prev'].disabled = False
+                    if self.cur_page == len(self.embed_pages) - 1:
+                        self.buttons['next'].disabled = True
+                    else:
+                        self.buttons['next'].disabled = False
+                cur_post = list(self.embed_pages.keys())[self.cur_page]
+                if cur_post in self.selected_keys:
+                    self.buttons['toggle_relation'].label = "Remove relation"
+                else:
+                    self.buttons['toggle_relation'].label = "Add relation"
+                await self.msg.edit(
+                    content=f"You pressed {btn_id}, on page {self.cur_page}, will add relations {self.selected_keys}",
+                    embed=list(self.embed_pages.values())[self.cur_page],
+                    view=self,
+                )
+
+        posts_view = SimilarPostPagingView(ctx, embeds)
+
+        # start the initial message:
+        msg = await posts_view.start()
+
+        timed_out = await posts_view.wait()
+
+        if timed_out:
+            return (False, None)
+        else:
+            return (posts_view.continue_upload, posts_view.selected_keys)
+
     ### NOTE Commands
 
     @commands.group(name='szuru', aliases=["sz"])
@@ -597,8 +792,95 @@ class SzuruPoster(commands.Cog):
             reference=ctx.message,
         )
 
+    @app_commands.command()
+    @app_commands.guild_only()
+    @app_commands.describe(
+        # safety="Safety rating for the post, required if the server has it enabled.",
+        attachment="Attach the image/file to upload.",
+    )
+    async def upload_new_post_slash(
+            self,
+            #ctx: commands.Context,
+            interaction: discord.Interaction,
+            # safety: SzuruSafetyRating,
+            #safety: typing.Literal['safe'],
+            #tags: typing.Optional[str],
+            attachment: typing.Optional[discord.Attachment],
+        ):
+        """Upload a post"""
+        # await interaction.response.send_message(f"Workin on it...")
+        await interaction.response.defer()
+        ctx = await discord.ext.commands.Context.from_interaction(interaction)
+        await self.update_interaction_context(interaction, ctx)
+
+        # checking that there is something to upload:
+        if not attachment:
+            await interaction.followup.send(f"Sorry, I currently only support uploading via message attachments.")
+            return
+        else:
+            # read file content
+            filebytes = await attachment.read()
+            filetokenresp = await self.user_api_upload_tempfile(ctx, filebytes)
+            img_tempurl = attachment.url
+
+        relations = []
+        # search for similar
+        similar_search_results = await self.user_api_post(
+            ctx, "/posts/reverse-search",
+            json_data={
+                "contentToken": filetokenresp['token'],
+            }
+        )
+        if similar_search_results['exactPost']:
+            await interaction.followup.send(
+                content=f"Looks like that is already uploaded!",
+            )
+            # TODO show existing post
+            return
+        elif similar_search_results['similarPosts']:
+            should_continue, relations = await self.prompt_user_about_similar_posts(
+                ctx, similar_search_results
+            )
+            if not should_continue:
+                print(f"should not continue after similar search")
+                return
+
+        if True: #enableSafety
+            safety_prompt = SzuruPostUploadSafetyPrompt()
+            e = discord.Embed().set_image(
+                url=img_tempurl
+            )
+            msg = await interaction.followup.send(
+                content=f"Choose a safety rating",
+                view=safety_prompt,
+                ephemeral=True,
+                wait=True, # returns msg
+                embed=e,
+            )
+            timed_out = await safety_prompt.wait()
+            if timed_out:
+                await msg.edit(content=f"Interaction timed out.", view=None, embed=None)
+                return
+            selected_safety = safety_prompt.children[0].values[0]
+            await msg.edit(
+                content=f"Selected safety {selected_safety}.",
+                view=None,
+                embed=None,
+            )
+            await msg.delete(delay=20)
+
+        uploading_message = await interaction.followup.send(
+            content="Uploaderin...", wait=True,
+        )
+
+        # TODO, change temp upload to post
+
     @szuru.command(name='upload', aliases=['u'])
-    async def upload_new_post(self, ctx: commands.Context, safety: str, *tags):
+    async def upload_new_post(
+            self,
+            ctx: commands.Context,
+            safety: typing.Literal['safe', 'sketchy', 'unsafe'],
+            *tags):
         """Upload media to the szuru via discord
 
         Specify 'anon' or 'anonymous' after the safety to upload anonymously.

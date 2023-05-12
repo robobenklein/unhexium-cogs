@@ -120,13 +120,14 @@ class SzuruPoster(commands.Cog):
 
         self.check_send_next_post.start()
 
-    # def cog_unload(self):
-    #     for state in self.voice_states.values():
-    #         self.bot.loop.create_task(state.stop())
-    #
-    #     return state
+        self.ctx_menu = app_commands.ContextMenu(
+            name='Update Post Embed',
+            callback=self.update_post_embed_by_context_menu,
+        )
+        self.bot.tree.add_command(self.ctx_menu)
 
     def cog_unload(self):
+        self.bot.tree.remove_command(self.ctx_menu.name, type=self.ctx_menu.type)
         self.check_send_next_post.cancel()
         self.bot.loop.run_until_complete(
             self.session.close()
@@ -625,6 +626,26 @@ class SzuruPoster(commands.Cog):
         else:
             return (posts_view.continue_upload, posts_view.selected_keys)
 
+    async def update_old_embed(self, ctx: commands.Context, old_message):
+        if len(old_message.embeds) != 1:
+            # Refusing to update old post message with unexpected number of embeds.
+            return False
+        first_embed = old_message.embeds[0]
+        m = re.match(r'Post (?P<post_id>[0-9]+)', first_embed.title)
+        if not m:
+            # await ctx.reply(
+            #     content="I couldn't figure out what post number that is, sorry."
+            # )
+            return False
+        post_id = m.group('post_id')
+        # get new embed:
+        data = await self.get_post_by_id(ctx, post_id)
+        post_e = await self.post_data_to_embed(data)
+        await old_message.edit(
+            embed=post_e,
+        )
+        return True
+
     ### NOTE Commands
 
     @commands.group(name='szuru', aliases=["sz"])
@@ -1025,6 +1046,87 @@ class SzuruPoster(commands.Cog):
 
             if search_results['total'] > max:
                 await ctx.send("To see more results either refine the search or change the sorting order.")
+
+    @szuru.command(name='update', aliases=['refresh'])
+    async def update_post_embed(self, ctx: commands.Context):
+        """Update the embed of a previously sent message."""
+        if not ctx.message.reference:
+            await ctx.reply(
+                content="Reply to one of my own messages when using this command, and I'll do my best to update that old embed!",
+                delete_after=60,
+            )
+            await ctx.message.delete(delay=60)
+            return
+        async with ctx.typing():
+            ref_message = ctx.message.reference.resolved
+            if not ref_message.embeds:
+                await ctx.reply(
+                    content="I couldn't update that message! I didn't find any embeds in it!"
+                )
+                return
+            if await self.update_old_embed(ref_message):
+                await ctx.tick()
+
+    # can't use cog-style here: https://github.com/Rapptz/discord.py/issues/7823#issuecomment-1086830458
+    # @app_commands.context_menu(name="Update Post Embed")
+    async def update_post_embed_by_context_menu(self, interaction: discord.Interaction, msg: discord.Message):
+        if msg.author != self.bot.user:
+            await interaction.response.send_message("I can only update my own messages!", ephemeral=True)
+            return
+        if len(msg.embeds) != 1:
+            await interaction.response.send_message("I am not sure how to update that post.", ephemeral=True)
+            return
+        ctx = await discord.ext.commands.Context.from_interaction(interaction)
+        await self.update_interaction_context(interaction, ctx)
+
+        updated = await self.update_old_embed(ctx, msg)
+        if not updated:
+            await interaction.response.send_message("Sorry, I could parse that embed.", ephemeral=True)
+            return
+        else:
+            await interaction.response.send_message("Updated!", ephemeral=True)
+
+    @szuru.command(name='massupdate', aliases=[])
+    @discord.ext.commands.is_owner()
+    async def mass_update_old_post_embeds(self, ctx: commands.Context, count: int=50, before=None):
+        """Update many old embeds with one command.
+
+        This can easily break your discord API rate limit for huge instances,
+        so only the bot owner can use this command.
+        """
+        ch = ctx.message.channel
+        async with ctx.typing():
+            if not before:
+                if ctx.message.reference:
+                    before = ctx.message.reference.resolved
+                else:
+                    before = ctx.message
+            else:
+                raise NotImplementedError()
+            progress_msg = await ctx.reply(
+                content=f"Checking the last {count} messages in this channel before {before.jump_url}"
+            )
+            n_updated = 0
+            failed = []
+            n_scanned = 0
+            async for msg in ch.history(limit=count, before=before):
+                n_scanned += 1
+                if msg.author != self.bot.user:
+                    continue
+                if len(msg.embeds) != 1:
+                    continue
+                updated = await self.update_old_embed(ctx, msg)
+                if updated:
+                    n_updated += 1
+                else:
+                    failed.append(msg)
+                await progress_msg.edit(
+                    content=f"messages updated {n_updated} / scanned {n_scanned} ...",
+                )
+            await progress_msg.edit(
+                content=f"Updated {n_updated} out of {n_scanned} scanned messages before {before.jump_url}.",
+                suppress=True,
+            )
 
     ### Task
 

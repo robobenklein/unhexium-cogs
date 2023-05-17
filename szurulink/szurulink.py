@@ -813,7 +813,7 @@ class SzuruPoster(commands.Cog):
             reference=ctx.message,
         )
 
-    @app_commands.command()
+    @app_commands.command(name="upload")
     @app_commands.guild_only()
     @app_commands.describe(
         # safety="Safety rating for the post, required if the server has it enabled.",

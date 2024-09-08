@@ -1084,7 +1084,7 @@ class SzuruPoster(commands.Cog):
             await interaction.response.send_message("Sorry, I could parse that embed.", ephemeral=True)
             return
         else:
-            await interaction.response.send_message("Updated!", ephemeral=True)
+            await interaction.response.send_message(f"Updated {msg.jump_url}!", ephemeral=True)
 
     @szuru.command(name='massupdate', aliases=[])
     @discord.ext.commands.is_owner()

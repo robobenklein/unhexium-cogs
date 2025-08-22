@@ -8,20 +8,25 @@ import re
 import base64
 import asyncio
 import time
-from io import BytesIO
+import sys
 import urllib
 import json
 import typing
+from io import BytesIO
 from enum import Enum
 from operator import itemgetter
 
 import discord
 import discord.ui
-from async_timeout import timeout
 from discord.ext import tasks
 import discord.ext.commands
 import requests
 import aiohttp
+
+if sys.version_info >= (3, 11):
+    from asyncio import timeout, timeout_at
+else:
+    from async_timeout import timeout, timeout_at
 
 from redbot.core import commands, app_commands
 from redbot.core import Config, commands, checks
